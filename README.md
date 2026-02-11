@@ -9,15 +9,21 @@ Each week is summarized in a single Markdown file, optimized for revisiting the 
 
 ## Repository Structure
 
+- `Assignments/`
+Mandatory assignments, reports, and related resources.
+
 - `Notes/`
-  Weekly Markdown notes (one file per week).
-  These are the primary learning artifacts.
+Weekly Markdown notes (one file per week).
+These are the primary learning artifacts.
+
+- `Protocols/`
+Protocol scripts
+
+- `OFMC/`
+OFMC executables for Linux, Windows, MacOS
 
 - `Slides/`
-  Original lecture slides, organized by week, kept for reference only.
-
-- `Assignments/`
-  Mandatory assignments, reports, and related resources.
+Original lecture slides, organized by week, kept for reference only.
 
 ---
 
