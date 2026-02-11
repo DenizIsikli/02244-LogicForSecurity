@@ -1,0 +1,25 @@
+Protocol: PhotoDelegation
+
+% Types: declares agents, fresh values (nonces/data), and cryptographic functions used
+Types:
+  Agent A, B, P;
+  Number D;
+  Function pk, sk;
+
+% Knowledge: specifies what each agent initially knows before protocol execution
+Knowledge:
+  A: A, B, P, pk(A), sk(A), pk(B), pk(P);
+  B: A, B, P, pk(B), sk(B), pk(A), pk(P);
+  P: A, B, P, pk(P), sk(P), pk(A), pk(B);
+
+% Actions: defines the protocol message flow between agents
+Actions:
+  A -> B: {| A,P |}sk(A)      % A signs delegation authorizing P
+  B -> P: {| D |}pk(P)        % B encrypts secret data D for P
+  P -> B: {| D |}sk(P)        % P signs D to prove receipt
+
+% Goals: defines the security properties to be checked by OFMC
+Goals:
+  D secret between B,P
+  P authenticates B on D
+
