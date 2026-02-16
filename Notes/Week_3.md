@@ -2,170 +2,171 @@
 
 ---
 
-## Dolev–Yao Recap
+## Dolev–Yao Deduction System
 
-- Intruder knowledge represented as a set of messages M
-- Deduction relation M ⊢ m defines what the intruder can derive
+- Intruder knowledge is a finite set M
+- Deduction M ⊢ m defines derivable messages
 - Rules:
-  - Axiom: use known messages
+  - Axiom: m ∈ M
   - Composition: apply public functions
-  - Decomposition: extract parts of messages
-  - Decryption: only with known keys
-- Deduction space is infinite due to repeated composition
+  - Projection: split pairs
+  - Decryption: requires key
+  - Signature opening: requires public key
+- Cryptography is perfect
 
 ---
 
-## Decision Procedure (Recap)
+## Automating Deduction
 
-- Goal: decide whether M ⊢ m
-- Approach:
-  - First perform analysis (decomposition)
-  - Then apply composition-only reasoning
+- Input: M and target m
+- Output: whether m is derivable
+- Must terminate despite infinite possibilities
+
+---
+
+## Composition-Only
+
+- Only Axiom + Composition
+- Solve by backward search
+- Break goal into subterms
+- Terminates since terms shrink
+
+---
+
+## Analysis Steps
+
+- Decrypt if key known
+- Split pairs
+- Add subterms to knowledge
+- Repeat until closure
+
+---
+
+## Full Procedure
+
+- Apply analysis
+- Then composition-only
 - Guarantees:
   - soundness
   - completeness
   - termination
-- Negative results are meaningful: if procedure returns “no”, no derivation exists
 
 ---
 
-## Needham–Schroeder Public-Key Protocol (NSPK)
+## NSPK Protocol
 
-- Classical authentication protocol (1978)
-- Uses public-key encryption
-- Each party contributes a nonce
-
-### Message Flow
-
-- A → B: encrypted message containing NA and identity of A
-- B → A: encrypted message containing NA and fresh NB
-- A → B: encrypted message containing NB
-
-### Goal
-
-- Shared secret derived from NA and NB
-- Intended to ensure authentication between A and B
+- A → B: {NA, A}pk(B)
+- B → A: {NA, NB}pk(A)
+- A → B: {NB}pk(B)
+- Goal: h(NA, NB) secret
 
 ---
 
-## Roles and Strands
+## Strands
 
-- Each protocol role is a sequence of send/receive actions
-- A strand is a concrete execution of a role
-- All variables are instantiated in a strand
-- Execution may be partial
-- Multiple strands may execute in parallel
+- Role = abstract behavior
+- Strand = concrete execution
+- Many strands run in parallel
 
 ---
 
-## Attacks as Strand Spaces
+## Attacks
 
-- An attack is modeled as interacting strands
-- Messages sent by honest agents are received by the intruder
-- Messages received by honest agents are constructed by the intruder
-- Intruder uses deduction rules to generate messages
-- Successful completion violates a protocol goal
+- Intruder intercepts all messages
+- Constructs messages using deduction
+- Attack if goal is violated
 
 ---
 
-## Infinite State Space Problem
+## Infinite State Problem
 
-- Unbounded sessions → infinitely many strands
-- Intruder has infinite choice of messages
-- Even bounded sessions still lead to infinite branching
-- Naive exploration is infeasible
-
----
-
-## Lazy Intruder: Core Idea
-
-- Avoid enumerating all possible messages
-- Use symbolic representations instead
-- Messages may contain variables
-- Each state is a constraint problem
-- Use backward search from attack goal
+- Infinite sessions
+- Infinite message space
+- Cannot brute-force explore
 
 ---
 
-## Symbolic States
+## Lazy Intruder
 
-- Represent interaction sequences with variables
-- Intruder messages are partially unspecified
-- Exact values determined later
-- Reduces infinite branching to constraint solving
-
----
-
-## Intruder Playing a Role
-
-- Intruder can instantiate protocol roles
-- Must satisfy initial knowledge requirements
-- Can simulate honest participants
-- Used to check executability of roles
+- Use symbolic messages with variables
+- Delay choices
+- Represent attack as constraints
+- Solve via backward search
 
 ---
 
-## Attack Scenario (NSPK)
+## Producing Messages
 
-- A communicates with intruder instead of B
-- B communicates with A in a separate session
-- Intruder relays messages between sessions
-- Intruder attempts to derive shared key h(NA, NB)
-
----
-
-## Choose and Check
-
-- Represent intruder communication symbolically
-- Track incoming and outgoing messages
-- Check if intruder can derive required outputs
-- Combine protocol execution with deduction reasoning
+- Axiom: already known
+- Composition: reduce to subterms
+- Analysis: decrypt/split
 
 ---
 
-## Needham–Schroeder–Lowe Fix (NSL)
+## Lazy Variables
 
-- Modification of NSPK
-- Adds B’s identity to second message
-- Prevents replay and man-in-the-middle attacks
-- Ensures correct identity binding
+- Do not instantiate immediately
+- Only assign when necessary
 
 ---
 
-## Lazy Intruder Architecture
+## Backtracking
 
-- Layer 1: symbolic search tree
+- Try alternatives when failing
+- Needed to explore all possibilities
+
+---
+
+## Unification
+
+- Match messages via substitution
+- Example:
+  - NA = n1
+  - NB = n2
+
+---
+
+## Attack Completion
+
+- Intruder learns n1, n2
+- Can compute h(n1, n2)
+- Secrecy broken
+
+---
+
+## Lowe Attack
+
+- Intruder relays between sessions
+- Breaks authentication
+
+---
+
+## NSL Fix
+
+- Add B identity to message
+- Prevents attack
+
+---
+
+## Architecture
+
+- Layer 1: symbolic search
 - Layer 2: constraint solving
-- Separates protocol structure from attacker reasoning
 
 ---
 
 ## Constraint Solving
 
-- Process constraints step-by-step
-- Incoming messages:
-  - try decryption
-  - add derived messages to knowledge
-- Outgoing messages:
-  - variables handled lazily
-  - otherwise apply:
-    - composition
-    - axiom
-- Backtracking used for exploration
-
----
-
-## Key Observations
-
-- Lazy approach avoids infinite branching
-- Symbolic reasoning replaces concrete enumeration
-- Backward search reduces complexity
-- Intruder behavior modeled precisely
+- Incoming: decrypt if possible
+- Outgoing:
+  - variable → delay
+  - otherwise:
+    - try composition
+    - try axiom
+- Use backtracking
 
 ---
 
 ## Complexity
 
-- Protocol insecurity (bounded sessions) is NP-complete
-- Attack = guessed symbolic trace + constraint solution
-- Hardness via reduction from Boolean satisfiability
+- Problem is NP-complete
