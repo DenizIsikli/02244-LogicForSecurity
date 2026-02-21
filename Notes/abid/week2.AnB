@@ -1,0 +1,21 @@
+Protocol: PhotoBook_W2_Fixed2
+
+Types:
+  Agent A, B, P;
+  Number NA;
+  Text Folder;
+  Function pk, photos;
+
+Knowledge:
+  A: A, B, P, pk(A), inv(pk(A)), pk(B), pk(P);
+  B: A, B, P, pk(B), inv(pk(B)), pk(A), pk(P), photos;
+  P: A, B, P, pk(P), inv(pk(P)), pk(A), pk(B);
+
+Actions:
+  P -> A: B, Folder
+  A -> P: { {A, P, B, Folder, NA}inv(pk(A)) }pk(B)
+  P -> B: { {A, P, B, Folder, NA}inv(pk(A)) }pk(B)
+  B -> P: { photos(Folder, NA) }pk(P)
+
+Goals:
+  B weakly authenticates A on P, Folder, NA;
