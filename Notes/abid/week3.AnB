@@ -1,0 +1,26 @@
+Protocol: PhotoBook_W3_IdPConstant_FixedA
+
+Types:
+  Agent B, P;
+  Number NA, NI;
+  Text Folder;
+  Function pk, photos, pw, h;
+
+Knowledge:
+  a: a, B, P, s, pk(s), pk(B), pk(P), pw(a,s), h;
+  B: a, B, P, s, pk(B), inv(pk(B)), pk(s), pk(P), photos;
+  P: a, B, P, s, pk(P), inv(pk(P)), pk(s), pk(B);
+  s: a, B, P, s, pk(s), inv(pk(s)), pk(B), pk(P), pw(a,s), h;
+
+Actions:
+  P -> a: B, Folder
+  a -> s: a, P, B, Folder, NA
+  s -> a: NI
+  a -> s: h(pw(a,s), NI, NA)
+  s -> P: { {s, a, P, B, Folder, NA}inv(pk(s)) }pk(B)
+  P -> B: { {s, a, P, B, Folder, NA}inv(pk(s)) }pk(B)
+  B -> P: { {B, photos(Folder, NA), NA}inv(pk(B)) }pk(P)
+
+Goals:
+  B weakly authenticates s on a, P, Folder, NA;
+  P weakly authenticates B on photos(Folder, NA);
