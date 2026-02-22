@@ -18,3 +18,5 @@ build/
 # Identifier
 *.Identifier
 
+# Executables
+*.exe
