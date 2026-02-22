@@ -1,10 +1,10 @@
-Protocol: PhotoBook_W2_Fixed2
+Protocol: PhotoBook_W3_IdPConstant_FixedA
 
 Types:
-  Agent A, B, P;
-  Number NA;
+  Agent B, P;
+  Number NA, NI;
   Text Folder;
-  Function pk, photos;
+  Function pk, photos, pw, h;
 
 Knowledge:
   A: A, B, P, pk(A), inv(pk(A)), pk(B), pk(P); # A knows identities, its own key pair, and public keys of B and P
@@ -18,4 +18,5 @@ Actions:
   B -> P: { photos(Folder, NA) }pk(P) # B verifies the request and sends the corresponding photos encrypted for P
 
 Goals:
-  B weakly authenticates A on P, Folder, NA;
+  B weakly authenticates s on a, P, Folder, NA;
+  P weakly authenticates B on photos(Folder, NA);
