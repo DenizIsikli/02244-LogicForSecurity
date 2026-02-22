@@ -1,0 +1,27 @@
+Protocol: PhotoBook_W3_Fixed
+
+Types:
+  Agent A, B, P, s;
+  Number NA, NI;
+  Text Folder;
+  Function pk, photos, h;
+  Const pwA;
+
+Knowledge:
+  A: A, B, P, s, pk(s), pk(B), pk(P), pwA, h; # A knows identities, public keys, shared password pwA with s, and hash function
+  B: A, B, P, s, pk(B), inv(pk(B)), pk(s), pk(P), photos; # B has its key pair, knows pk(s) to verify tokens, and stores photos
+  P: A, B, P, s, pk(P), inv(pk(P)), pk(s), pk(B); # P has its key pair and knows public keys of s and B
+  s: A, B, P, s, pk(s), inv(pk(s)), pk(B), pk(P), pwA, h; # s (identity provider) has key pair, shared password pwA, and hash function
+
+Actions:
+  P -> A: B, Folder # P requests access by specifying server B and the desired folder
+  A -> s: A, P, B, Folder, NA # A requests authorization from s including context and nonce NA
+  s -> A: NI # s sends nonce NI as a challenge for authenticating A
+  A -> s: h(pwA, NI, NA) # A proves knowledge of pwA using hash over password and both nonces
+  s -> P: { {s, A, P, B, Folder, NA}inv(pk(s)) }pk(B) # s issues signed authorization token bound to context, encrypted for B
+  P -> B: { {s, A, P, B, Folder, NA}inv(pk(s)) }pk(B) # P forwards the authorization token to B
+  B -> P: { {B, photos(Folder, NA), NA}inv(pk(B)) }pk(P) # B verifies token and returns signed and encrypted photos tied to NA
+
+Goals:
+  B weakly authenticates s on A, P, Folder, NA;
+  P weakly authenticates B on photos(Folder, NA);
