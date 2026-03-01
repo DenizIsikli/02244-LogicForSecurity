@@ -1,0 +1,25 @@
+Protocol: PhotoBook_W3_Final
+
+Types:
+  Agent A, B, P, s;
+  Number NA, NID, Folder;
+  Function pk, photos, pw, h;
+
+Knowledge:
+  B: A, B, P, s, pk(B), inv(pk(B)), pk(s), pk(P), photos;
+  A: A, B, P, s, pk(s), pk(B), pk(P), pw(A,s), h;
+  P: A, B, P, s, pk(P), inv(pk(P)), pk(s), pk(B);
+  s: A, B, P, s, pk(s), inv(pk(s)), pk(B), pk(P), pw(A,s), h;
+
+Actions:
+  A -> s: A, P, B, Folder, NA
+  s -> A: NID
+  A -> s: h(pw(A,s), NID, NA)
+  s -> P: {s, A, P, B, Folder, NA}inv(pk(s))
+  P -> B: {{s, A, P, B, Folder, NA}inv(pk(s))}pk(B)
+  B -> P: {{B, photos(Folder, NA), NA}inv(pk(B))}pk(P)
+
+Goals:
+  B  authenticates s on A, P, Folder, NA;
+  P  authenticates s on A, B, Folder, NA;
+  P  authenticates B on photos(Folder, NA);

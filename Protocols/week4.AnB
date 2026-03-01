@@ -1,0 +1,26 @@
+Protocol: PhotoBook_W4
+
+Types:
+  Agent A, B, P, s;
+  Number NA, NID, Folder;
+  Function pk, photos, pw, h;
+  Format f1, f2, f3, f4, f5;
+
+Knowledge:
+  A:   A, B, P, s, pk(s), pw(A,s), h;
+  B:   A, B, P, s, pk(B), inv(pk(B)), pk(s), pk(P), photos;
+  P:   A, B, P, s, pk(P), inv(pk(P)), pk(s), pk(B);
+  s:  A, B, P, s, pk(s), inv(pk(s)), pk(B), pk(P), pw(A,s), h;
+
+Actions:
+  A -> s: f1(A, P, B, Folder, NA)
+  s -> A: f2(NID)
+  A -> s: f3(h(pw(A,s), NID, NA))
+  s -> P: {f4(s, A, P, B, Folder, NA)}inv(pk(s))
+  P -> B: {{f4(s, A, P, B, Folder, NA)}inv(pk(s))}pk(B)
+  B -> P: {{f5(B, photos(Folder, NA), NA)}inv(pk(B))}pk(P)
+
+Goals:
+  B weakly authenticates s on A, P, Folder, NA;
+  P weakly authenticates s on A, B, Folder, NA;
+  P weakly authenticates B on photos(Folder, NA);
