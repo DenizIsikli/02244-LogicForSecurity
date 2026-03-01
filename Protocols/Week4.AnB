@@ -1,38 +1,26 @@
-Protocol: PhotoBook_W4_Fixed
+Protocol: PhotoBook_W4
 
 Types:
-  Agent A, B, P, ip;
-  Number NA, NID;
-  Text Folder;
-  Function pk, photos, h;
-  Const pwA;
-  Format fKeyReq, fKeyRes, f1, f2, f3, f4, f5;
+  Agent A, B, P, s;
+  Number NA, NID, Folder;
+  Function pk, photos, pw, h;
+  Format f1, f2, f3, f4, f5;
 
 Knowledge:
-  A:   A, B, P, ip, pk(ip), pwA(A,ip), h;
-  B:   A, B, P, ip, pk(B), inv(pk(B)), pk(ip), pk(P), photos;
-  P:   A, B, P, ip, pk(P), inv(pk(P)), pk(ip), pk(B);
-  ip:  A, B, P, ip, pk(ip), inv(pk(ip)), pk(B), pk(P), pwA(A,ip), h;
+  A:   A, B, P, s, pk(s), pw(A,s), h;
+  B:   A, B, P, s, pk(B), inv(pk(B)), pk(s), pk(P), photos;
+  P:   A, B, P, s, pk(P), inv(pk(P)), pk(s), pk(B);
+  s:  A, B, P, s, pk(s), inv(pk(s)), pk(B), pk(P), pw(A,s), h;
 
 Actions:
-  # --- Public key lookup (required by Week 4) ---
-  A -> ip: fKeyReq(A, B)
-  ip -> A: {fKeyRes(B, pk(B))}inv(pk(ip))
-
-  A -> ip: fKeyReq(A, P)
-  ip -> A: {fKeyRes(P, pk(P))}inv(pk(ip))
-
-  # --- Main protocol ---
-  A -> ip: f2(A, P, B, Folder, NA)
-  ip -> A: f3(NID)
-  A -> ip: f4(h(pwA(A,ip), NID, NA))
-
-  ip -> P: {{f5(ip, A, P, B, Folder, NA)}inv(pk(ip))}pk(P)
-  P -> B: {{f5(ip, A, P, B, Folder, NA)}inv(pk(ip))}pk(B)
-
+  A -> s: f1(A, P, B, Folder, NA)
+  s -> A: f2(NID)
+  A -> s: f3(h(pw(A,s), NID, NA))
+  s -> P: {f4(s, A, P, B, Folder, NA)}inv(pk(s))
+  P -> B: {{f4(s, A, P, B, Folder, NA)}inv(pk(s))}pk(B)
   B -> P: {{f5(B, photos(Folder, NA), NA)}inv(pk(B))}pk(P)
 
 Goals:
-  B weakly authenticates ip on A, P, Folder, NA;
-  P weakly authenticates ip on A, B, Folder, NA;
+  B weakly authenticates s on A, P, Folder, NA;
+  P weakly authenticates s on A, B, Folder, NA;
   P weakly authenticates B on photos(Folder, NA);
