@@ -1,0 +1,37 @@
+Protocol: PhotoBook_W5
+
+Types:
+  Agent A, B, P, ip;
+  Number NA, NID, Folder;
+  Function photos, pw, h;
+  Format f1, f2, f3, f4, f5;
+
+Knowledge:
+  A: A, B, P, ip, pw(A,ip), h;
+  B: A, B, P, ip, photos;
+  P: A, B, P, ip;
+  ip: A, B, P, ip, pw(A,ip), h;
+
+Actions:
+    # A authorizes P to access folder in B on A's behalf, using ip as intermediary
+    A ->* ip: f1(A, P, B, Folder, NA)
+
+    # ip generates a fresh NID (session identifier) and sends it to A
+    ip *-> A: f2(NID)
+
+    # A proves to ip that it knows the password pw(A,ip) by sending a hash of the password, NID, and NA
+    A ->* ip: f3(h(pw(A,ip), NID, NA))
+
+    # ip forwards the authorization information to P and B, binding it to the session identifier NID
+    ip *-> P: f4(ip, A, P, B, Folder, NA, NID)
+
+    # P forwards the authorization information to B, along with a proof that it has access to the folder (photos(Folder, NA))
+    P *-> B: f4(ip, A, P, B, Folder, NA, NID)
+
+    # B verifies the authorization information and sends the photos of the folder to P, binding it to the session identifier NID
+    B *-> P: f5(B, P, ip, A, Folder, photos(Folder, NA), NA, NID)
+
+Goals:
+  B weakly authenticates ip on A, P, Folder, NA;
+  P weakly authenticates ip on A, B, Folder, NA;
+  P weakly authenticates B on photos(Folder, NA);

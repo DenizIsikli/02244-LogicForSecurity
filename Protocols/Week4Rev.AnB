@@ -15,22 +15,22 @@ Knowledge:
   ip:  A, B, P, ip, pk(ip), inv(pk(ip)), pk(B), pk(P), pwA(A,ip), h;
 
 Actions:
-  # --- Public key lookup (required by Week 4) ---
-  A -> ip: fKeyReq(A, B)
-  ip -> A: {fKeyRes(B, pk(B))}inv(pk(ip))
+    # --- FIXED key response: bind requester A ---
+    A -> ip: fKeyReq(A, B)
+    ip -> A: {fKeyRes(A, B, pk(B))}inv(pk(ip))
 
-  A -> ip: fKeyReq(A, P)
-  ip -> A: {fKeyRes(P, pk(P))}inv(pk(ip))
+    A -> ip: fKeyReq(A, P)
+    ip -> A: {fKeyRes(A, P, pk(P))}inv(pk(ip))
 
-  # --- Main protocol ---
-  A -> ip: f2(A, P, B, Folder, NA)
-  ip -> A: f3(NID)
-  A -> ip: f4(h(pwA(A,ip), NID, NA))
+    # --- FIXED main protocol: add NID binding + separate format ---
+    A -> ip: f2(A, P, B, Folder, NA)
+    ip -> A: f3(NID)
+    A -> ip: f4(h(pwA(A,ip), NID, NA))
 
-  ip -> P: {{f5(ip, A, P, B, Folder, NA)}inv(pk(ip))}pk(P)
-  P -> B: {{f5(ip, A, P, B, Folder, NA)}inv(pk(ip))}pk(B)
+    ip -> P: {{f5(ip, A, P, B, Folder, NA, NID)}inv(pk(ip))}pk(P)
+    P -> B: {{f5(ip, A, P, B, Folder, NA, NID)}inv(pk(ip))}pk(B)
 
-  B -> P: {{f5(B, photos(Folder, NA), NA)}inv(pk(B))}pk(P)
+    B -> P: {{f5(B, photos(Folder, NA), NA, NID)}inv(pk(B))}pk(P)
 
 Goals:
   B weakly authenticates ip on A, P, Folder, NA;
