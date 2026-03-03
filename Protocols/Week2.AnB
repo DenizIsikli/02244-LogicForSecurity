@@ -1,21 +1,23 @@
 Protocol: PhotoBook_W2
 
 Types:
-  Agent A, B, P;
-  Number NA;
-  Text Folder;
-  Function pk, photos;
+  Agent a, p, B;
+  Number NA, NB, Photos;
+  Function sk;
 
 Knowledge:
-  A: A, B, P, pk(A), inv(pk(A)), pk(B), pk(P); # A knows identities, its own key pair, and public keys of B and P
-  B: A, B, P, pk(B), inv(pk(B)), pk(A), pk(P), photos; # B knows identities, its own key pair, public keys, and stored photo function
-  P: A, B, P, pk(P), inv(pk(P)), pk(A), pk(B); # P knows identities, its own key pair, and public keys of A and B
+  a: a, B, p, sk(a,B);
+  B: a, B, p, sk(a,B), sk(B,p);
+  p: a, B, p, sk(B,p);
 
 Actions:
-  P -> A: B, Folder # P requests access from A by specifying server B and the desired folder
-  A -> P: { {A, P, B, Folder, NA}inv(pk(A)) }pk(B) # A signs an authorization (binding A, P, B, Folder, NA) and encrypts it for B
-  P -> B: { {A, P, B, Folder, NA}inv(pk(A)) }pk(B) # P forwards the authorization token to B
-  B -> P: { photos(Folder, NA) }pk(P) # B verifies the request and sends the corresponding photos encrypted for P
+  p -> a: p, B, NA
+  a -> B: {| a, p, NA |}sk(a,B)
+  B -> a: {| NA, NB |}sk(a,B)
+  a -> B: {| NB |}sk(a,B)
+  B -> p: {| p, B, NA, NB, Photos |}sk(B,p)
 
 Goals:
-  B weakly authenticates A on P, Folder, NA;
+  Photos secret between B, p;
+  p authenticates B on NA, NB, Photos;
+  B authenticates a on p, NA, NB;
