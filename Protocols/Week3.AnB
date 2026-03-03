@@ -1,25 +1,24 @@
 Protocol: PhotoBook_W3
 
 Types:
-  Agent A, B, P, ip;
-  Number NA, NID, Folder;
-  Function pk, photos, pw, h;
+  Agent A, IP, B, P;
+  Number NA, NID, NB, NP, Payload;
+  Function sk, pw;
 
 Knowledge:
-  B: A, B, P, ip, pk(B), inv(pk(B)), pk(ip), pk(P), photos;
-  A: A, B, P, ip, pk(ip), pk(B), pk(P), pw(A,ip), h;
-  P: A, B, P, ip, pk(P), inv(pk(P)), pk(ip), pk(B);
-  ip: A, B, P, ip, pk(ip), inv(pk(ip)), pk(B), pk(P), pw(A,ip), h;
+  A: A, IP, B, P, pw(A,IP);
+  IP: A, IP, B, P, sk(IP,B), pw(A,IP);
+  B: A, IP, B, P, sk(IP,B), sk(B,P);
+  P: A, IP, B, P, sk(B,P);
 
 Actions:
-  A -> ip: A, P, B, Folder, NA
-  ip -> A: NID
-  A -> ip: h(pw(A,ip), NID, NA)
-  ip -> P: {ip, A, P, B, Folder, NA}inv(pk(ip))
-  P -> B: {{ip, A, P, B, Folder, NA}inv(pk(ip))}pk(B)
-  B -> P: {{B, photos(Folder, NA), NA}inv(pk(B))}pk(P)
+  A  -> IP: A, B, P, NA, pw(A,IP)
+  IP -> B:  {| A, P, NA, NID |}sk(IP,B)
+  B  -> P:  {| A, NA, NID, NB |}sk(B,P)
+  P  -> B:  NP
+  B  -> P:  {| NB, NP, Payload |}sk(B,P)
 
 Goals:
-  B  authenticates ip on A, P, Folder, NA;
-  P  authenticates ip on A, B, Folder, NA;
-  P  authenticates B on photos(Folder, NA);
+  B authenticates IP on A, P, NA, NID;
+  P authenticates B on NB, NP;
+  Payload secret between B, P;
