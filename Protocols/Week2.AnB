@@ -1,23 +1,23 @@
 Protocol: PhotoBook_W2
 
 Types:
-  Agent a, p, B;
-  Number NA, NB, Photos;
-  Function sk;
+    Agent a, p, B;
+    Number NA, NB, Payload;
+    Function sk;
 
 Knowledge:
-  a: a, B, p, sk(a,B);
-  B: a, B, p, sk(a,B), sk(B,p);
-  p: a, B, p, sk(B,p);
+    a: a, B, p, sk(a,B);
+    B: a, B, p, sk(a,B), sk(B,p);
+    p: a, B, p, sk(B,p);
 
 Actions:
-  p -> a: p, B, NA
-  a -> B: {| a, p, NA |}sk(a,B)
-  B -> a: {| NA, NB |}sk(a,B)
-  a -> B: {| NB |}sk(a,B)
-  B -> p: {| p, B, NA, NB, Photos |}sk(B,p)
+    p -> a: p, B, NA
+    a -> B: {| a, p, NA |}sk(a,B)
+    B -> a: {| NA, NB |}sk(a,B)
+    a -> B: {| NB |}sk(a,B)
+    B -> p: {| p, B, NA, NB, Payload |}sk(B,p)
 
 Goals:
-  Photos secret between B, p;
-  p authenticates B on NA, NB, Photos;
-  B authenticates a on p, NA, NB;
+    p authenticates B on NA, NB, Payload;
+    B authenticates a on p, NA, NB;
+    Payload secret between B, p;
