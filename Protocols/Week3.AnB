@@ -1,23 +1,23 @@
 Protocol: PhotoBook_W3
 
 Types:
-  Agent A, IP, B, P;
-  Number NA, NB, NP, Payload;
-  Function sk, pw;
+    Agent a, ip, B, p;
+    Number NA, NB, NP, Payload;
+    Function sk, pk, pw;
 
 Knowledge:
-  A: A, IP, B, P, pw(A,IP); # Without pw(A,IP) it completes in 2 minutes max
-  IP: A, IP, B, P, pw(A,IP), sk(IP,B);
-  B: A, IP, B, P, sk(IP,B), sk(B,P);
-  P: A, IP, B, P, sk(B,P);
+    a: a, ip, B, p, pk(ip), pw(a,ip);
+    ip: a, ip, B, p, pk(ip), pw(a,ip), sk(ip,B);
+    B: a, ip, B, p, pk(ip), sk(ip,B), sk(B,p);
+    p: a, ip, B, p, pk(ip), sk(B,p);
 
 Actions:
-  A  -> IP: A, NA, pw(A,IP)
-  IP -> B: {|A,NA|}sk(IP,B)
-  B  -> P: {|A,NA,NB|}sk(B,P)
-  P  -> B: {|NB,NP|}sk(B,P)
-  B  -> P: {|NB,NP,Payload|}sk(B,P)
+    a  -> ip: a, NA, pw(a,ip)
+    ip -> B: {| a, NA |}sk(ip,B)
+    B  -> p: {| a, NA, NB |}sk(B,p)
+    p  -> B: {| NB, NP |}sk(B,p)
+    B  -> p: {| NB, NP, Payload |}sk(B,p)
 
 Goals:
-  P authenticates B on NB,NP;
-  Payload secret between B,P;
+    p authenticates B on NB, NP;
+    Payload secret between B, p;
