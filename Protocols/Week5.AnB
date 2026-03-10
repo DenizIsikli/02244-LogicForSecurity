@@ -1,25 +1,25 @@
 Protocol: PhotoBook_W5
 
 Types:
-  Agent A, B, P, ip;
-  Number NA, NID, NB;
-  Text Folder;
-  Function photos, h;
-  Const pwA;
+    Agent a, B, p, ip;
+    Number NA, NID, NB, Payload;
+    Function h;
+    Const pwA;
 
 Knowledge:
-  A:  A, B, P, ip, pwA(A,ip), h;
-  B:  A, B, P, ip, photos;
-  P:  A, B, P, ip;
-  ip: A, B, P, ip, pwA(A,ip), h;
+    a:  a, B, p, ip, pwA(a,ip), h;
+    B:  a, B, p, ip;
+    p:  a, B, p, ip;
+    ip: a, B, p, ip, pwA(a,ip), h;
 
 Actions:
-  A  *-> ip: A,P,B,Folder,NA
-  ip ->* A: NID
-  A  *-> ip: A,NID,h(pwA(A,ip),NID,NA)
-  ip ->* P: ip,A,P,B,Folder,NA
-  P  ->* B: P,B,Folder,NA,NB
-  B  ->* P: B,P,Folder,NA,NB,photos(Folder,NA)
+    a  *-> ip: a,p,B,NA
+    ip ->* a: NID
+    a  *-> ip: a,NID,h(pwA(a,ip),NID,NA)
+    ip ->* p: ip,a,p,B,NA
+    p  ->* B: p,B,NA,NB
+    B  ->* p: B,p,NA,NB,Payload
 
 Goals:
-  P authenticates B on NB,photos(Folder,NA);
+    p authenticates B on NB,Payload;
+    Payload secret between B,p;
