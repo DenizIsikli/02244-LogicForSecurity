@@ -14,23 +14,14 @@ Knowledge:
 
 Actions:
     [a]  *->* ip : a,p,b,NA
-
     ip   *->* [a]: {ip,a,p,b,NA,NID}inv(pk(ip))
-
     [a]  *->* ip : a,NID,h(pwA(a,ip),NID,NA)
-
     ip   *->* p  : ip,a,p,b,NA
-
     p    *->* ip : p,a,b,NA,NP
-
     ip   *->* p  : {ip,a,p,b,NA,NP}inv(pk(ip))
-
     p    *->* b  : p,b,a,NA,NP,{ip,a,p,b,NA,NP}inv(pk(ip))
-
     b    *->* p  : b,p,a,NA,NP,NB
-
     p    *->* b  : p,b,a,NA,NP,NB,{ip,a,p,b,NA,NP}inv(pk(ip))
-
     b    *->* p  : b,p,a,NA,NP,NB,Payload
 
 Goals:
