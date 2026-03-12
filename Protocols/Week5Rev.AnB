@@ -1,0 +1,41 @@
+Protocol: PhotoBook_W5_MoreGoals
+
+Types:
+    Agent a, b, p, ip;
+    Number NA, NID, NP, NB, Payload;
+    Function h, pk;
+    Const pwA;
+
+Knowledge:
+    a:  a, b, p, ip, pwA(a,ip), h, pk(ip);
+    b:  a, b, p, ip, pk(ip);
+    p:  a, b, p, ip, pk(ip);
+    ip: a, b, p, ip, pwA(a,ip), h, pk(ip), inv(pk(ip));
+
+Actions:
+    [a]  *->* ip : a,p,b,NA
+
+    ip   *->* [a]: {ip,a,p,b,NA,NID}inv(pk(ip))
+
+    [a]  *->* ip : a,NID,h(pwA(a,ip),NID,NA)
+
+    ip   *->* p  : ip,a,p,b,NA
+
+    p    *->* ip : p,a,b,NA,NP
+
+    ip   *->* p  : {ip,a,p,b,NA,NP}inv(pk(ip))
+
+    p    *->* b  : p,b,a,NA,NP,{ip,a,p,b,NA,NP}inv(pk(ip))
+
+    b    *->* p  : b,p,a,NA,NP,NB
+
+    p    *->* b  : p,b,a,NA,NP,NB,{ip,a,p,b,NA,NP}inv(pk(ip))
+
+    b    *->* p  : b,p,a,NA,NP,NB,Payload
+
+Goals:
+    a authenticates ip on a,b,p,NA,NID;
+    p authenticates ip on a,b,p,NA,NP;
+    b authenticates p on a,NA,NP,NB;
+    p authenticates b on a,NA,NP,NB,Payload;
+    Payload secret between b,p;
