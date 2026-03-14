@@ -1,25 +1,23 @@
-Protocol: PhotoDelegation
+Protocol: PhotoBook_W2
 
-% Types: declares agents, fresh values (nonces/data), and cryptographic functions used
 Types:
-  Agent A, B, P;
-  Number D;
-  Function pk, sk;
+    Agent A, P, B;
+    Number NA, NB, NP, Payload;
+    Function sk;
 
-% Knowledge: specifies what each agent initially knows before protocol execution
 Knowledge:
-  A: A, B, P, pk(A), sk(A), pk(B), pk(P);
-  B: A, B, P, pk(B), sk(B), pk(A), pk(P);
-  P: A, B, P, pk(P), sk(P), pk(A), pk(B);
+    A: A, B, P, sk(A,B);
+    B: A, B, P, sk(A,B), sk(B,P);
+    P: A, B, P, sk(B,P);
 
-% Actions: defines the protocol message flow between agents
 Actions:
-  A -> B: {| A,P |}sk(A)      % A signs delegation authorizing P
-  B -> P: {| D |}pk(P)        % B encrypts secret data D for P
-  P -> B: {| D |}sk(P)        % P signs D to prove receipt
+    P -> A: P, B, NP                    
+    A -> B: {| A,B, P, NA, NP|}sk(A,B)  
+    B -> A: {| NP, NA, NB |}sk(A,B)     
+    A -> B: {| NB |}sk(A,B)             
+    B -> P: {| P, B, NB, NP, Payload |}sk(B,P) 
 
-% Goals: defines the security properties to be checked by OFMC
 Goals:
-  D secret between B,P
-  P authenticates B on D
-
+    P authenticates B on NB, NP, Payload;
+    B authenticates A on P, NA, NB;
+    Payload secret between B, P;
