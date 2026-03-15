@@ -19,7 +19,6 @@ Actions:
     B  -> P: {| NB, NP, Payload |}sk(B,P)
 
 Goals:
-    
     B authenticates P on NB,NP;
     P authenticates B on NB, NP, Payload;
     Payload secret between B, P;
