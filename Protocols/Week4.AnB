@@ -1,16 +1,16 @@
 Protocol: PhotoBook_W4
 
 Types:
-    Agent A, P, B, ip;
+    Agent A, ip, B, P;
     Number NA, NB, NP, Payload;
     Function sk, pw, pk;
     Format f0, f1, f2, f3, f4, f5, f6;
 
 Knowledge:
-    A:  A, ip, B, P, pw(A,ip), pk(ip);
-    ip: A, ip, B, P, pw(A,ip), pk(ip), pk(B), sk(ip,B);
-    B:  A, ip, B, P, sk(ip,B), sk(B,P);
-    P:  A, ip, B, P, sk(B,P);
+    A:  A, ip, B, P, pw(A,ip), pk(ip), f0, f1, f2;
+    ip: A, ip, B, P, pw(A,ip), pk(ip), pk(B), sk(ip,B), f0, f1, f2, f3;
+    B:  A, ip, B, P, sk(ip,B), sk(B,P), f3, f4;
+    P:  A, ip, B, P, sk(B,P), f4, f5, f6;
 
 Actions:
     A  -> ip: f0(A,B)
@@ -22,5 +22,6 @@ Actions:
     B  -> P:  {|f6(NB,NP,Payload)|}sk(B,P)
 
 Goals:
-    P authenticates B on NB,NP;
-    Payload secret between B,P;
+    B authenticates P on NB,NP;
+    P authenticates B on NB, NP, Payload;
+    Payload secret between B, P;

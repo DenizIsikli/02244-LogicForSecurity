@@ -4,21 +4,22 @@ Types:
     Agent A, ip, B, P;
     Number NA, NB, NP, Payload;
     Function sk, pk, pw;
-    Format f1, f2, f3, f4, f5;
 
 Knowledge:
-    A:  A, ip, B, P, pk(ip), pw(A,ip);
+    A: A, ip, B, P, pk(ip), pw(A,ip);
     ip: A, ip, B, P, pk(ip), pw(A,ip), sk(ip,B);
-    B:  A, ip, B, P, pk(ip), sk(ip,B), sk(B,P);
-    P:  A, ip, B, P, pk(ip), sk(B,P);
+    B: A, ip, B, P, pk(ip), sk(ip,B), sk(B,P);
+    P: A, ip, B, P, pk(ip), sk(B,P);
 
 Actions:
-    A  -> ip: f1(A,NA,pw(A,ip))
-    ip -> B:  {|f2(A,NA)|}sk(ip,B)
-    B  -> P:  {|f3(A,NA,NB)|}sk(B,P)
-    P  -> B:  {|f4(NB,NP)|}sk(B,P)
-    B  -> P:  {|f5(NB,NP,Payload)|}sk(B,P)
+    A  -> ip: A, NA, pw(A,ip)
+    ip -> B: {| A, NA |}sk(ip,B)
+    B  -> P: {| A, NA, NB |}sk(B,P)
+    P  -> B: {| NB, NP |}sk(B,P)
+    B  -> P: {| NB, NP, Payload |}sk(B,P)
 
 Goals:
-    P authenticates B on NB,NP;
-    Payload secret between B,P;
+    
+    B authenticates P on NB,NP;
+    P authenticates B on NB, NP, Payload;
+    Payload secret between B, P;
