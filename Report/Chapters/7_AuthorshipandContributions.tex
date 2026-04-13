@@ -1,112 +1,14 @@
-\section{Authorship and Contributions}
+\section{Conclusion}
 
-This project was completed by Group 31, consisting of three members from the DTU course 02244 (Logic for Security). Each member contributed to the design, analysis, and documentation of the secure data hosting server using the Volpano type system method.
+The Volpano type system provides a sound, static method for ensuring information flow security in data hosting systems. By enforcing type constraints that prevent High→Low flows (both explicit and implicit), the method guarantees that programs cannot leak confidential information without explicit declassification.
 
-\subsection{Team Members}
+For the hospital scenario, this provides formal assurance that medical data privacy is maintained even when executing untrusted programs. The system supports practical use cases (anonymization, aggregation, statistical analysis) through a declassification mechanism that requires explicit authorization and approved transformations.
 
-\begin{enumerate}
-    \item \textbf{Deniz Isikli} (\href{mailto:s215818@student.dtu.dk}{s215818@student.dtu.dk})
-    
-    \item \textbf{Benas Skripkiunas} (\href{mailto:s253140@student.dtu.dk}{s253140@student.dtu.dk})
-    
-    \item \textbf{Abid Hasan} (\href{mailto:s252729@student.dtu.dk}{s252729@student.dtu.dk})
-\end{enumerate}
-
-\subsection{Contribution Summary}
-
-\begin{table}[H]
-\centering
-\begin{tabular}{|p{4cm}|p{3cm}|p{6cm}|}
-\hline
-\textbf{Section} & \textbf{Primary Author} & \textbf{Contributions} \\
-\hline
-1. Introduction & Group & Motivation, project scope, method selection \\
-\hline
-2. System Participants & Group & Trust model, roles, security goals \\
-\hline
-3. Design \& Information Flow & Group & Volpano method explanation, type rules, application \\
-\hline
-4. Server API & Group & Command specifications, protocol design \\
-\hline
-5. Security Analysis & Group & Type checking examples, safety proofs, analysis results \\
-\hline
-6. Declassification & Group & Approved transformations, declassification strategy \\
-\hline
-7. Authorship & Group & Contribution documentation \\
-\hline
-8. References & Group & Bibliography compilation \\
-\hline
-Appendix & Group & Type system reference, examples \\
-\hline
-\end{tabular}
-\caption{Section Authorship and Contributions}
-\end{table}
-
-\subsection{Collaborative Process}
-
-The project was developed through the following collaborative process:
-
-\begin{enumerate}
-    \item \textbf{Planning Phase}: All members reviewed the project description and defined the system architecture together.
-    
-    \item \textbf{Design Phase}: Group discussion on security goals, labeling scheme, and Volpano method application.
-    
-    \item \textbf{Implementation Phase}: Section-wise drafting with peer review from other members.
-    
-    \item \textbf{Review Phase}: Cross-checking for consistency, completeness, and technical accuracy across all sections.
-    
-    \item \textbf{Finalization Phase}: Final compilation, formatting, and quality assurance.
-\end{enumerate}
-
-\subsection{Key Decisions}
-
+Key advantages over runtime monitoring:
 \begin{itemize}
-    \item \textbf{Choice of Volpano Method}: Selected as the second listed method in the project description, providing a type-system-based approach distinct from Denning's label-based method.
-    
-    \item \textbf{Three-Level Label Hierarchy}: Implemented private, friends, and public labels mapped to High, Medium, and Low security types respectively.
-    
-    \item \textbf{Hospital Scenario Application}: Used medical data hosting as the motivating example throughout the report to illustrate practical security requirements.
-    
-    \item \textbf{Comprehensive API Specification}: Defined both data operations and program execution commands to cover all system functionality.
-    
-    \item \textbf{Explicit Declassification Policy}: Included approved transformations (anonymization, aggregation, differential privacy) to enable practical data sharing.
+    \item Security verified at design time, not during execution
+    \item No performance overhead
+    \item Automatic type inference eliminates manual label assignment
+    \item Soundness guarantee: type-check success implies security
 \end{itemize}
 
-\subsection{References and Resources}
-
-The project is based on the following key resources:
-
-\begin{itemize}
-    \item \textbf{Course Material}: DTU 02244 Logic for Security lectures, particularly Week 8 on Information Flow Control.
-    
-    \item \textbf{Volpano Method}: ``A Sound Type System For Secure Flow Analysis'' \cite{VSI96} by Dennis Volpano, Geoffrey Smith, and Cynthia Irvine.
-    
-    \item \textbf{Information Flow Theory}: Standard definitions and analysis techniques from computer security literature.
-    
-    \item \textbf{Practical Applications}: Motivation from real-world scenarios (hospital data hosting, cloud storage, research data sharing).
-\end{itemize}
-
-\subsection{Code and Artifacts}
-
-All project documents and supporting materials are maintained in the repository:
-
-\begin{itemize}
-    \item \texttt{Report/main.tex}: Main LaTeX document.
-    \item \texttt{Report/Chapters/}: Individual chapter files.
-    \item \texttt{Report/References.bib}: Bibliography database.
-    \item \texttt{Notes/}: Course notes on information flow and security concepts.
-\end{itemize}
-
-\subsection{Completion and Verification}
-
-This report was completed on \textbf{11$^{\text{th}}$ May 2026} and has been reviewed for:
-
-\begin{itemize}
-    \item \textbf{Technical Accuracy}: Correct application of Volpano type system principles.
-    \item \textbf{Completeness}: All required sections present and thoroughly documented.
-    \item \textbf{Clarity}: Explanations accessible to readers familiar with formal security methods.
-    \item \textbf{Consistency}: Uniform notation and terminology throughout.
-    \item \textbf{Practicality}: Realistic examples and applicable system design.
-\end{itemize}
-
-All team members have reviewed and approve this submission.

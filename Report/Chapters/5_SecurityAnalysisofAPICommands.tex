@@ -1,292 +1,89 @@
-\section{Security Analysis of API Commands}
+\section{Security Analysis and Type Checking Examples}
 
-This section applies the Volpano type system method to formally analyze each API command for information flow violations. We verify that confidentiality and integrity goals are met.
+\subsection{Type Checking Examples}
 
-\subsection{READ Command Analysis}
-
-\textbf{Type Signature}:
-
-\begin{equation}
-\text{READ} : (\textbf{High}|\textbf{Medium}|\textbf{Low}) \to \text{Output}
-\end{equation}
-
-\textbf{Type Analysis}:
-
-\begin{enumerate}
-    \item \textbf{Input}: Data object with label (confidentiality type).
-    \item \textbf{Access Control}: Server checks if requesting user has permission.
-    \begin{itemize}
-        \item private $\Rightarrow$ Only owner, type $\leftarrow$ High
-        \item friends $\Rightarrow$ Owner + friends, type $\leftarrow$ Medium
-        \item public $\Rightarrow$ All users, type $\leftarrow$ Low
-    \end{itemize}
-    \item \textbf{Output Type}: Matches input confidentiality type.
-\end{enumerate}
-
-\textbf{Confidentiality Property}:
-
-\begin{itemize}
-    \item If user requests private data but is not owner, request is denied (no type flow occurs).
-    \item If user requests friend-labeled data but is not a friend, request is denied.
-    \item If user requests public data, they receive data of type Low, which can be freely output.
-    \item \textbf{Conclusion}: Information flows only to authorized users. Type system ensures authorized flows.
-\end{itemize}
-
-\textbf{Integrity Property}:
-
-\begin{itemize}
-    \item READ operation is non-modifying; no integrity risk.
-\end{itemize}
-
-\textbf{Verdict}: \checkmark \textbf{SAFE}
-
-\subsection{WRITE Command Analysis}
-
-\textbf{Type Signature}:
-
-\begin{equation}
-\text{WRITE} : (\text{existing\_data} : \tau_{\text{old}}, \text{new\_data} : \tau_{\text{new}}) \to \text{void}
-\end{equation}
-
-\textbf{Type Analysis}:
-
-\begin{enumerate}
-    \item \textbf{Authorization}: Check integrity label of existing data.
-    \begin{itemize}
-        \item owner-trusted $\Rightarrow$ Only owner can write.
-        \item owner-or-friends $\Rightarrow$ Owner or friends can write.
-        \item anyone $\Rightarrow$ Any program running in owner's context.
-    \end{itemize}
-    \item \textbf{Input Data Type}: New data has type based on its source.
-    \item \textbf{Stored Data Type}: Existing data has type based on its confidentiality label.
-\end{enumerate}
-
-\textbf{Integrity Analysis}:
-
-The critical concern is: Can untrusted data corrupt trusted data?
-
-\textbf{Case 1: Owner performs write}
-\begin{itemize}
-    \item Owner is trusted, so new data can flow to stored data.
-    \item No integrity violation.
-\end{itemize}
-
-\textbf{Case 2: Friend performs write (owner-or-friends)}
-\begin{itemize}
-    \item Friend's write operation must not introduce untrusted modifications to critical data.
-    \item Type constraint: Type of friend's source $\sqcap$ owner's trust level.
-    \item If friend writes to owner-trusted data, type error (untrusted Low input $\not\to$ High owner data).
-    \item If friend writes to owner-or-friends data, allowed (type Medium $\to$ Medium).
-\end{itemize}
-
-\textbf{Confidentiality Analysis}:
-
-\begin{itemize}
-    \item WRITE modifies data, potentially changing its content.
-    \item Volpano ensures that if new data is High (secret), the updated storage is also High.
-    \item Output type inference: $\tau_{\text{stored}} := \tau_{\text{old}} \sqcup \tau_{\text{new}}$
-\end{itemize}
-
-\textbf{Verdict}: \checkmark \textbf{SAFE} (if integrity label authorization is enforced)
-
-\subsection{RUN\_PROGRAM Command Analysis}
-
-\textbf{Type Signature}:
-
-\begin{equation}
-\text{RUN\_PROGRAM} : (\text{inputs} : \vec{\tau}_{\text{in}}, \text{program} : P) \to (\text{output} : \tau_{\text{out}})
-\end{equation}
-
-\textbf{Volpano Type Checking Process}:
-
-\begin{enumerate}
-    \item \textbf{Assign types to inputs}: Each input data object receives a type from its label.
-    \begin{itemize}
-        \item private $\to$ High
-        \item friends $\to$ Medium
-        \item public $\to$ Low
-    \end{itemize}
-    \item \textbf{Check program body}: Volpano analyzes the program with the assigned input types.
-    \begin{itemize}
-        \item Verify explicit flows (assignments).
-        \item Track program counter (pc) for implicit flows (conditionals, loops).
-        \item Compute output type based on control and data flow.
-    \end{itemize}
-    \item \textbf{Verify constraints}: Ensure High information does not flow to Low outputs.
-    \begin{itemize}
-        \item Direct assignment: $\text{High} \sqsubseteq \text{output}$ type?
-        \item Control-dependent assignment: pc-level $\sqcup$ data-type $\sqsubseteq$ output type?
-    \end{itemize}
-\end{enumerate}
-
-\textbf{Example 1: Safe Program (Image Enhancement)}
+\textbf{Example 1: Safe Program (Image Processing)}
 
 \begin{verbatim}
-Input: medical_image : High
-Output: enhanced_image : ?
+Input:  medical_image : High
+Output: result : ?
 
-Program:
-  enhanced_image := enhance(medical_image)
-  
-Type Analysis:
-  - enhance() function: High -> High (type preserving)
-  - Assignment: High ⊑ enhanced_image? 
-    Yes, if enhanced_image is declared High.
-  - Conclusion: Output type = High. Only owner can access.
+Program:  result := enhance(medical_image)
+
+Type Check:
+  enhance is type-preserving: High → High
+  Assignment: High ⊑ result_type? 
+  Yes, if result is declared High or inferred as High
+  Verdict: ✓ SAFE (output labeled private/High)
 \end{verbatim}
 
-\checkmark \textbf{SAFE}
+The output is private and only the owner can access it.
 
 \textbf{Example 2: Explicit Leak (Malicious Program)}
 
 \begin{verbatim}
-Input: secret_data : High, public_output : Low
-Output: suspicious_result : ?
+Input:  secret : High, public_out : Low
+Output: result : ?
 
 Program:
-  suspicious_result := secret_data + 1
+  result := secret + 1
   if (result > 1000) then
-    public_output := 1
+    public_out := 1
   else
-    public_output := 0
-    
-Type Analysis:
-  - Line 1: Type of (secret_data + 1) = High. 
-    Assignment to suspicious_result: High ⊑ type? Yes, if High.
-  - Line 2-5: Control condition is High (depends on secret_data).
-    pc = High.
-    Assignment to public_output (type Low):
-    High ⊔ Low ⊑ Low? 
-    No! (High ⊑ Low is false)
-  - Conclusion: Type error. Implicit leak detected.
+    public_out := 0
+
+Type Check:
+  Line 1: High + Low = High ⊔ Low = High
+          result : High (inferred)
+  Line 2: condition is High, so pc = High
+  Line 4: Assignment public_out : Low
+          Check: pc ⊔ 1 ⊑ Low?
+          High ⊔ Low ⊑ Low? NO!
+  Verdict: ✗ TYPE ERROR - Implicit leak detected
 \end{verbatim}
 
-\checkmark \textbf{TYPE ERROR (Prevented)}
+The program is rejected. The malicious attempt to leak via control flow is blocked.
 
 \textbf{Example 3: Implicit Leak via Timing}
 
 \begin{verbatim}
-Input: secret : High, timer : Low
-Output: result : Low
+Input:  secret : High, counter : Low
+Output: counter
 
 Program:
   while (secret > 0):
-    timer := timer + 1
+    counter := counter + 1
     secret := secret - 1
-  result := timer
-    
-Type Analysis:
-  - While condition: secret has type High, so pc = High.
-  - Assignment inside loop: timer : Low, but pc = High.
-    High ⊔ Low ⊑ Low?
-    No! Type error.
-  - Conclusion: Implicit timing leak is blocked at type-check time.
+  return counter
+
+Type Check:
+  Condition: secret is High, so pc = High
+  Assignment in loop: counter : Low
+  Check: pc ⊔ (counter+1) ⊑ Low?
+  High ⊔ Low ⊑ Low? NO!
+  Verdict: ✗ TYPE ERROR - Timing leak detected
 \end{verbatim}
 
-\checkmark \textbf{TYPE ERROR (Prevented)}
+The loop count would reveal the value of the secret. Type checking blocks this.
 
-\textbf{Confidentiality Guarantee}:
+\subsection{Soundness Property}
 
-If a program type-checks successfully with input types $\vec{\tau}_{\text{in}}$ and output type $\tau_{\text{out}}$, then:
-
-\begin{equation}
-\forall i : \tau_i \sqsubseteq \tau_{\text{out}} \text{ or input } i \text{ is not used}
-\end{equation}
-
-This ensures that High inputs cannot influence Low outputs.
-
-\textbf{Integrity Guarantee}:
-
-Similarly, for integrity (reversed flow):
+\textbf{Theorem}: If a program type-checks with security types $\tau_1, \ldots, \tau_n$ for inputs and output type $\tau_{\text{out}}$, then:
 
 \begin{equation}
-\text{Untrusted (Low) inputs cannot modify trusted (High) storage}
+\forall i: \tau_i \sqsubseteq \tau_{\text{out}} \text{ or input } i \text{ is unused}
 \end{equation}
 
-This is enforced by the same type system: untrusted program output cannot be written to trusted storage.
+\textbf{Corollary}: High input cannot produce Low output. Malicious programs that attempt explicit or implicit leaks are rejected at type-check time.
 
-\textbf{Verdict}: \checkmark \textbf{SAFE} (if type checking passes)
+\subsection{Hospital Application}
 
-\subsection{SHARE Command Analysis}
-
-\textbf{Type Signature}:
-
-\begin{equation}
-\text{SHARE} : (\text{data} : \tau, \text{target\_users} : U) \to \text{ACL update}
-\end{equation}
-
-\textbf{Analysis}:
-
-\begin{enumerate}
-    \item \textbf{Authorization}: Only data owner can SHARE.
-    \item \textbf{Label-based access}: 
-    \begin{itemize}
-        \item friends label: Shared users are added to friend list.
-        \item Data becomes accessible to friends (type Medium can now flow to friends).
-    \end{itemize}
-    \item \textbf{Confidentiality}: Type system ensures friends cannot access data labeled private (type High).
-\end{enumerate}
-
-\textbf{Confidentiality Property}:
-
-Data labeled friends (Medium) is shared; data labeled private (High) remains private. The type system enforces this by tracking which users can see which types.
-
-\textbf{Verdict}: \checkmark \textbf{SAFE}
-
-\subsection{RELABEL Command Analysis}
-
-\textbf{Request}:
-
-\begin{verbatim}
-RELABEL(data_id, new_label)
-  Examples:
-  - public -> friends: downgrading public data (always safe)
-  - friends -> private: downgrading friends data (always safe)
-  - private -> friends: upgrading private data (unsafe - leaks)
-  - private -> public: upgrading (dangerous leak)
-\end{verbatim}
-
-\textbf{Confidentiality Analysis}:
-
-Relabeling from High to Low (private to public) is potentially unsafe:
-
-\begin{equation}
-\text{Downgrade: } \tau_{\text{old}} \sqsubseteq \tau_{\text{new}} \text{ is safe, otherwise requires declassification}
-\end{equation}
+\textbf{Scenario}: Process medical images for enhancement and anonymize for research.
 
 \begin{itemize}
-    \item private (High) $\to$ friends (Medium): Downgrade, requires justification.
-    \item private (High) $\to$ public (Low): Downgrade, requires strong justification (see Section 6).
-    \item friends (Medium) $\to$ public (Low): Downgrade, requires justification.
-    \item public (Low) $\to$ friends (Medium): Upgrade, safe (restricts access).
+    \item \textbf{Image Enhancement}: Input (private/High) → Output (private/High). Only owner accesses result.
+    \item \textbf{Anonymization}: Input (private/High) → Output (public/Low) via approved declassifier. Researchers can access anonymized output.
+    \item \textbf{Statistical Analysis}: Aggregate patient measurements → Produce population statistics with differential privacy noise. Output labeled Low.
 \end{itemize}
 
-\textbf{Verdict}: \checkmark \textbf{SAFE if downgrade is justified} (see Section 6 for declassification rules)
-
-\subsection{Summary: Security Analysis Results}
-
-\begin{table}[H]
-\centering
-\begin{tabular}{|l|c|c|}
-\hline
-\textbf{Command} & \textbf{Confidentiality} & \textbf{Integrity} \\
-\hline
-READ & \checkmark Safe & N/A (read-only) \\
-WRITE & \checkmark Safe$^*$ & \checkmark Safe$^*$ \\
-RUN\_PROGRAM & \checkmark Safe$^{**}$ & \checkmark Safe$^{**}$ \\
-SHARE & \checkmark Safe & N/A \\
-DELETE & \checkmark Safe & \checkmark Safe (owner-only) \\
-RELABEL & \checkmark Safe$^{***}$ & N/A \\
-\hline
-\end{tabular}
-\caption{Security Analysis Summary ($^*$ if authorization enforced, $^{**}$ if type-check passes, $^{***}$ if declassification justified)}
-\end{table}
-
-\textbf{Key Findings}:
-
-\begin{itemize}
-    \item \textbf{Volpano Type System is Sound}: If all commands pass type checking, information flows are secure.
-    \item \textbf{Type-Based Prevention}: Both explicit and implicit leaks are prevented statically.
-    \item \textbf{No Runtime Overhead}: Security checks are completed at design time; no performance penalty during execution.
-    \item \textbf{Declassification Required for Downgrades}: Downgrading labels requires explicit justification (Section 6).
-\end{itemize}
+In all cases, the Volpano type system ensures that no individual patient data leaks beyond what was explicitly approved via declassification.

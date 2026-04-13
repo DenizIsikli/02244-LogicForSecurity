@@ -1,5 +1,23 @@
 \section{Appendix}
 
+\subsection{Authorship and Contributions}
+
+\textbf{Group 31 - DTU 02244 Logic for Security}
+
+\textbf{Team Members}:
+\begin{itemize}
+    \item Deniz Isikli (s215818@student.dtu.dk)
+    \item Benas Skripkiunas (s253140@student.dtu.dk)
+    \item Abid Hasan (s252729@student.dtu.dk)
+\end{itemize}
+
+\textbf{Key Decisions}:
+\begin{itemize}
+    \item Volpano method: Type-based information flow control
+    \item Three-level labels: private/friends/public → High/Medium/Low
+    \item Hospital scenario: Medical data hosting application
+\end{itemize}
+
 \subsection{Volpano Type System Reference}
 
 \subsubsection{Type Lattice}
@@ -12,7 +30,23 @@
 \text{Ordering: } \textbf{Low} \sqsubseteq \textbf{Medium} \sqsubseteq \textbf{High}
 \end{equation}
 
-Join operation:
+\subsubsection{Key Type Checking Rules}
+
+\textbf{Assignment Rule}:
+\begin{equation}
+\frac{\vdash e : \tau_e \quad \tau_e \sqsubseteq \tau_x}{\vdash x := e}
+\end{equation}
+
+Prevents High→Low flows.
+
+\textbf{Control Flow Rule}:
+\begin{equation}
+\frac{\vdash b : \tau_b \quad \tau_b = \text{pc} \quad (\text{pc} \sqcup \tau_e) \sqsubseteq \tau_x}{\text{Assignment in guarded block safe}}
+\end{equation}
+
+Prevents implicit flows through control structures.
+
+
 
 \begin{align}
 \textbf{Low} \sqcup \textbf{Low} &= \textbf{Low} \\
