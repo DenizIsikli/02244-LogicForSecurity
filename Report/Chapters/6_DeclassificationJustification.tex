@@ -1,1 +1,227 @@
 \section{Declassification Justification}
+
+Declassification refers to the intentional downgrading of security labels, allowing information to flow from High (confidential) to Low (public). While the Volpano type system prevents unauthorized information leaks, there are legitimate scenarios where controlled declassification is necessary.
+
+\subsection{Why Declassification Is Needed}
+
+The Volpano method is \textbf{sound}: it prevents any information flow from High to Low. However, this also means that useful operations may be blocked:
+
+\begin{itemize}
+    \item \textbf{Data Anonymization}: Medical records are High (private), but anonymized versions are Low (safe to share with researchers).
+    \item \textbf{Aggregation}: Individual medical measurements are High, but statistical summaries (mean, std-dev) are Low (safe to publish).
+    \item \textbf{Redaction}: Sensitive fields are removed, resulting in safe-to-share data.
+    \item \textbf{Format Conversion}: Raw High data converted to a safe representation becomes Low.
+\end{itemize}
+
+\subsection{Declassification Strategy}
+
+To support these use cases while maintaining security, we employ a \textbf{trusted declassification policy}:
+
+\subsubsection{Principle 1: Explicit Intent}
+
+Any downgrade requires explicit user action (not automatic).
+
+\begin{itemize}
+    \item User requests RELABEL or runs an approved declassification program.
+    \item Operation is logged with timestamp, user, and justification.
+    \item Audit trail enables accountability.
+\end{itemize}
+
+\subsubsection{Principle 2: Approved Transformations}
+
+Only specific, pre-approved transformations can produce Low output from High input.
+
+\textbf{Approved Programs}:
+
+\begin{enumerate}
+    \item \textbf{Anonymization}: Removes personally identifiable information (PII).
+    \begin{itemize}
+        \item Input: Patient records with names, IDs, contact info (High).
+        \item Transformation: Replace names with IDs, remove contact info, aggregate dates to months.
+        \item Output: Anonymized records (Low) with statistical power preserved.
+        \item Hospital Example: Patient names and SSNs removed; only diagnosis and treatment preserved.
+    \end{itemize}
+    
+    \item \textbf{Aggregation}: Computes statistics that don't reveal individual data.
+    \begin{itemize}
+        \item Input: Individual medical measurements (High).
+        \item Transformation: Compute mean, median, std-dev over multiple patients.
+        \item Output: Statistical summary (Low).
+        \item Hospital Example: Average blood pressure across 1000 patients is not sensitive.
+    \end{itemize}
+    
+    \item \textbf{Noise Addition (Differential Privacy)}: Adds calibrated noise to statistics.
+    \begin{itemize}
+        \item Input: Aggregate query result (potentially High).
+        \item Transformation: Add Laplace noise proportional to query sensitivity.
+        \item Output: Noisy result provably hiding individual contributions (Low).
+        \item Hospital Example: Query ``How many patients with diabetes?'' returns 523 + noise.
+    \end{itemize}
+    
+    \item \textbf{Redaction}: Removes sensitive fields, retains useful data.
+    \begin{itemize}
+        \item Input: Document with sensitive and non-sensitive sections (High).
+        \item Transformation: Remove sensitive fields, blank out or delete.
+        \item Output: Redacted document (Low).
+        \item Hospital Example: Clinical notes with patient identifiers redacted but diagnoses intact.
+    \end{itemize}
+\end{enumerate}
+
+\subsubsection{Principle 3: Type System Integration}
+
+Approved declassification programs are marked with special types:
+
+\begin{equation}
+\text{declassify} : \textbf{High} \to \textbf{Low}
+\end{equation}
+
+These programs bypass normal type checking but are themselves verified as safe:
+
+\begin{enumerate}
+    \item Program semantics are formally proven to not leak information beyond approved transformations.
+    \item Type signature explicitly shows downgrading.
+    \item Volpano type system recognizes ``declassify'' as a trusted operation.
+\end{enumerate}
+
+\subsection{Declassification in Our System}
+
+\subsubsection{Hospital Scenario: Anonymized Research Dataset}
+
+\textbf{Use Case}:
+
+Hospital wants to share patient data with medical researchers.
+
+\begin{itemize}
+    \item \textbf{Raw data}: Patient records with names, contact info, medical history (labeled High).
+    \item \textbf{Goal}: Produce anonymized dataset for researchers (labeled Low).
+    \item \textbf{Challenge}: Ensure no accidental re-identification or data leakage.
+\end{itemize}
+
+\textbf{Declassification Process}:
+
+\begin{enumerate}
+    \item \textbf{Step 1: Define Anonymization Policy}
+    \begin{itemize}
+        \item Remove: Name, SSN, Contact info, Exact dates.
+        \item Replace: Specific birthdate with age range.
+        \item Aggregate: Individual records into groups (minimum 10 records per group).
+        \item Add noise: Report counts with differential privacy.
+    \end{itemize}
+    
+    \item \textbf{Step 2: Run Approved Program}
+    \begin{verbatim}
+    RUN_PROGRAM(
+      program: anonymize_records,
+      input_data_ids: [patient_records_db],
+      output_label: public
+    )
+    
+    Volpano Type Check:
+      Input: patient_records_db : High
+      Program: anonymize_records declared as
+        Type: (High -> Low) with declassification
+      Verification: Anonymization semantics proven sound
+      Result: Type check passes, output type = Low
+    \end{verbatim}
+    
+    \item \textbf{Step 3: Audit Entry}
+    \begin{itemize}
+        \item User: Dr. Alice (hospital administrator)
+        \item Action: RELABEL(patient_records_db_anonymized, public)
+        \item Justification: "Anonymized for research study XYZ, IRB approval on file"
+        \item Timestamp: 2026-04-13 10:30 UTC
+        \item Result: Dataset now accessible to researchers (Low label).
+    \end{itemize}
+\end{enumerate}
+
+\subsubsection{Hospital Scenario: Aggregated Statistics}
+
+\textbf{Use Case}:
+
+Publish summary statistics of patient outcomes without revealing individual data.
+
+\textbf{Declassification Process}:
+
+\begin{verbatim}
+RUN_PROGRAM(
+  program: compute_aggregate_stats,
+  input_data_ids: [patient_records_db],
+  output_label: public
+)
+
+Program:
+  total_patients := COUNT(patients)
+  avg_age := AVERAGE(patient.age)
+  avg_blood_pressure := AVERAGE(patient.blood_pressure)
+  
+  // Add differential privacy noise
+  noise := LaplacianNoise(epsilon=0.1)
+  output := {
+    total_patients: total_patients + noise,
+    avg_age: avg_age + noise,
+    avg_bp: avg_blood_pressure + noise
+  }
+
+Volpano Analysis:
+  - Aggregation operations (COUNT, AVERAGE) are approved declassifiers.
+  - Noise addition masks individual contributions.
+  - Output type: Low (safe to publish)
+\end{verbatim}
+
+\textbf{Security Guarantee}:
+
+With $\epsilon$-differential privacy, the output does not reveal sensitive information about any individual patient beyond what's necessary for statistics.
+
+\subsection{Declassification Rules}
+
+The system enforces these formal rules for safe declassification:
+
+\textbf{Rule 1: Authorization}
+
+\begin{equation}
+\text{Only data owner can initiate declassification}
+\end{equation}
+
+\textbf{Rule 2: Approved Transformations}
+
+\begin{equation}
+\text{declassify}(v : \textbf{High}) : \textbf{Low} \text{ only if approved\_program}(v)
+\end{equation}
+
+\textbf{Rule 3: Audit Trail}
+
+\begin{equation}
+\text{All declassifications logged with owner, time, justification, program used}
+\end{equation}
+
+\textbf{Rule 4: Type Preservation}
+
+\begin{equation}
+\text{If } v' = \text{declassify}(v), \text{ then } \tau(v') = \textbf{Low}
+\end{equation}
+
+Only the explicitly declassified data becomes Low; other High data remains High.
+
+\subsection{Non-Declassifiable Scenarios}
+
+Certain operations cannot be safely declassified:
+
+\begin{itemize}
+    \item \textbf{Encryption keys}: Never declassify (re-encryption with different key required).
+    \item \textbf{Authentication credentials}: Never declassify (invalid security model).
+    \item \textbf{Raw medical images}: Declassify only after anonymization (remove metadata, EXIF data).
+    \item \textbf{Genetic information}: Highly sensitive; declassify only with extreme care and expert review.
+\end{itemize}
+
+\subsection{Conclusion}
+
+Declassification is a critical feature for practical security systems. By combining:
+
+\begin{enumerate}
+    \item \textbf{Explicit intent} (user action required),
+    \item \textbf{Approved transformations} (proven-safe programs),
+    \item \textbf{Volpano type system integration} (static verification),
+    \item \textbf{Comprehensive auditing} (accountability),
+\end{enumerate}
+
+we enable legitimate data sharing while preventing unauthorized information leaks. The approach is sound: if a declassification program is approved and verified, the system guarantees no unintended information escape.

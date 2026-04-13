@@ -1,3 +1,218 @@
 \section{Design Choices and Information Flow}
+
 \subsection{Design Rationale}
+
+\subsubsection{Security Label Model}
+
+The system uses a three-level security label for confidentiality:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|c|}
+\hline
+\textbf{Label} & \textbf{Meaning} & \textbf{Access} \\
+\hline
+\texttt{private} & Owner-only data & Only owner \\
+\hline
+\texttt{friends} & Data accessible to designated friends & Owner + friends \\
+\hline
+\texttt{public} & Data accessible to all users & All authenticated users \\
+\hline
+\end{tabular}
+\caption{Confidentiality Labels and Access Control}
+\end{table}
+
+The lattice structure is: $\texttt{private} \sqsubset \texttt{friends} \sqsubset \texttt{public}$
+
+In the Volpano type system, we map these to security types:
+
+\begin{itemize}
+    \item \texttt{private} $\rightarrow$ \textbf{High} (most restrictive, highest confidentiality)
+    \item \texttt{friends} $\rightarrow$ \textbf{Medium} (intermediate, accessible by friends)
+    \item \texttt{public} $\rightarrow$ \textbf{Low} (least restrictive, widely accessible)
+\end{itemize}
+
+The type ordering is: $\textbf{Low} \sqsubseteq \textbf{Medium} \sqsubseteq \textbf{High}$
+
+\textbf{Rationale}: Using the Volpano method, security types enforce that data labeled High (private) cannot directly or indirectly flow to outputs labeled Low (public). This prevents both explicit leaks (direct assignment) and implicit leaks (information released through program behavior or control flow).
+
+\subsubsection{Data Model}
+
+Each stored object has:
+
+\begin{itemize}
+    \item \textbf{Identifier} (e.g., medical-image-001)
+    \item \textbf{Owner} (user who uploaded it)
+    \item \textbf{Data content} (binary blob: image, record, etc.)
+    \item \textbf{Confidentiality label} (private, friends, public)
+    \item \textbf{Integrity label} (owner-trusted, owner-or-friends, anyone)
+    \item \textbf{Metadata} (timestamp, format, size)
+\end{itemize}
+
+\subsubsection{Program Execution Model}
+
+Programs are executed in a sandboxed context on the server:
+
+\begin{itemize}
+    \item \textbf{Input}: Program receives designated data objects from owner's store.
+    \item \textbf{Execution}: Program runs with restricted privileges; it can read inputs and produce outputs.
+    \item \textbf{Output}: Program produces result data, which is stored with labels determined by security type inference.
+    \item \textbf{Constraint}: Program's type must satisfy: inputs can flow to outputs only if security levels permit.
+\end{itemize}
+
+\textbf{Key Property}: Even if a program is malicious, the Volpano type checker ensures that high-confidentiality inputs cannot influence outputs visible to unauthorized users.
+
 \subsection{Information Flow Analysis}
+
+\subsubsection{Volpano Type System Overview}
+
+The Volpano method provides a \textbf{sound type system} for enforcing secure information flow. Key concepts:
+
+\begin{itemize}
+    \item \textbf{Security Types}: Each variable has a security type ($\textbf{Low}$, $\textbf{Medium}$, $\textbf{High}$).
+    \item \textbf{Type Ordering}: $\textbf{Low} \sqsubseteq \textbf{Medium} \sqsubseteq \textbf{High}$ (partial order).
+    \item \textbf{Soundness}: If a program type-checks, information flows only in permitted directions:
+    \begin{itemize}
+        \item Confidentiality: High $\not\to$ Low (secret data doesn't leak to public).
+        \item Integrity: Low $\not\to$ High (untrusted data doesn't corrupt trusted data).
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Type Inference Rules}
+
+\textbf{Declaration Rule}:
+
+Each variable is declared with a security type:
+
+\begin{equation}
+\frac{}{\vdash \texttt{var} \, x : \tau \quad \text{(where } \tau \in \{\textbf{Low}, \textbf{Medium}, \textbf{High}\})}
+\end{equation}
+
+\textbf{Constant Rule}:
+
+Literals and constants are \textbf{Low} (publicly known):
+
+\begin{equation}
+\frac{}{\vdash c : \textbf{Low}}
+\end{equation}
+
+\textbf{Variable Rule}:
+
+A variable has its declared type:
+
+\begin{equation}
+\frac{\vdash x : \tau}{\vdash x : \tau}
+\end{equation}
+
+\textbf{Expression Join Rule}:
+
+When combining expressions (via operators), the result type is the join (least upper bound):
+
+\begin{equation}
+\frac{\vdash e_1 : \tau_1 \quad \vdash e_2 : \tau_2}{\vdash e_1 \oplus e_2 : \tau_1 \sqcup \tau_2}
+\end{equation}
+
+where $\sqcup$ is the join operation:
+
+\begin{itemize}
+    \item $\textbf{Low} \sqcup \tau = \tau$
+    \item $\textbf{Medium} \sqcup \textbf{High} = \textbf{High}$
+    \item $\textbf{High} \sqcup \text{anything} = \textbf{High}$
+\end{itemize}
+
+\subsubsection{Explicit Flow Analysis}
+
+\textbf{Assignment Rule}:
+
+An assignment $x := e$ is safe if the expression type can flow to the variable type:
+
+\begin{equation}
+\frac{\vdash e : \tau_e \quad \tau_e \sqsubseteq \tau_x}{\vdash x := e \,\, \text{safe}}
+\end{equation}
+
+\textbf{Violation}: If $\tau_e \sqsubseteq \tau_x$ does not hold, a type error is reported.
+
+\textbf{Example - Explicit Leak}:
+
+\begin{verbatim}
+secret_value : High
+public_output : Low
+public_output := secret_value  // Type error: High ⊑ Low? No!
+\end{verbatim}
+
+The type checker rejects this assignment because High $\not\sqsubseteq$ Low.
+
+\subsubsection{Implicit Flow Analysis}
+
+\textbf{Implicit Flow}: Information can leak through control structures (conditionals, loops).
+
+\textbf{Example}:
+
+\begin{verbatim}
+if (secret_value > 0) then
+    public_output := 1
+else
+    public_output := 0
+// Leak: public_output reveals whether secret_value > 0
+\end{verbatim}
+
+\textbf{Control Flow Rule}:
+
+The Volpano method tracks implicit flows by maintaining a \textbf{program counter (pc)} security level:
+
+\begin{equation}
+\text{pc} := \textbf{High}(\texttt{condition})
+\end{equation}
+
+All assignments within a guarded block inherit the pc level:
+
+\begin{equation}
+\frac{\text{pc} = \tau_{pc} \quad \tau_{pc} \sqcup \tau_e \sqsubseteq \tau_x}{\vdash x := e \,\, \text{safe (in guarded block)}}
+\end{equation}
+
+\textbf{Example Analysis}:
+
+\begin{verbatim}
+if (secret_value : High) then
+    public_output : Low := 1
+    // pc = High, so High ⊔ Low(constant) = High ⊑ Low? No!
+    // Type error: implicit leak detected.
+\end{verbatim}
+
+\subsubsection{Application to Server Operations}
+
+\textbf{Read Operation}:
+
+\begin{itemize}
+    \item User requests data labeled High (private).
+    \item If user is not owner, the read is denied (access control).
+    \item If user is owner, data is returned with type \textbf{High}.
+    \item User's program can read High data but cannot assign it to Low outputs.
+\end{itemize}
+
+\textbf{Write Operation}:
+
+\begin{itemize}
+    \item Program produces output with inferred type based on inputs.
+    \item Output is stored with the type-inferred label.
+    \item If output contains secret inputs (High), it is labeled High.
+    \item Only the owner can later access this High-labeled output.
+\end{itemize}
+
+\textbf{Share Operation}:
+
+\begin{itemize}
+    \item Data labeled Medium is shared with friends.
+    \item A friend's program running on Medium data must not leak to their Low outputs.
+    \item Type check ensures Medium $\not\to$ Low.
+\end{itemize}
+
+\textbf{Program Execution}:
+
+\begin{itemize}
+    \item Program receives inputs with security types from their labels.
+    \item Type checker verifies the program body.
+    \item If all flows are safe (High $\not\to$ Low, etc.), program is allowed to run.
+    \item Output types are automatically inferred.
+\end{itemize}
+

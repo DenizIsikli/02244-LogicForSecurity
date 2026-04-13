@@ -1,2 +1,315 @@
 \section{Server API}
+
+The hosting server provides the following API commands for data management and program execution. Each command is specified with its parameters, return values, and security properties.
+
+\subsection{Core Data Operations}
+
+\subsubsection{UPLOAD}
+
+Upload data to the server and assign security labels.
+
+\textbf{Request}:
+
+\begin{verbatim}
+UPLOAD(data_content, confidentiality_label, integrity_label, metadata)
+  data_content: binary blob (image, record, etc.)
+  confidentiality_label: {private, friends, public}
+  integrity_label: {owner-trusted, owner-or-friends, anyone}
+  metadata: {format, description, timestamp}
+\end{verbatim}
+
+\textbf{Response}:
+
+\begin{verbatim}
+{
+  data_id: string (unique identifier)
+  owner: current_user
+  label: (confidentiality_label, integrity_label)
+  status: success | error
+}
+\end{verbatim}
+
+\textbf{Precondition}: User is authenticated.
+
+\textbf{Effect}: Data is stored with assigned labels. Access control list is created based on labels.
+
+\subsubsection{READ}
+
+Read stored data.
+
+\textbf{Request}:
+
+\begin{verbatim}
+READ(data_id, requesting_user)
+  data_id: identifier of stored data
+  requesting_user: user making the request
+\end{verbatim}
+
+\textbf{Response}:
+
+\begin{verbatim}
+{
+  data_content: binary blob (if access permitted)
+  label: (confidentiality_label, integrity_label)
+  status: success | forbidden | not_found
+}
+\end{verbatim}
+
+\textbf{Access Control}:
+
+\begin{itemize}
+    \item Owner can always read.
+    \item \texttt{private} label: Only owner can read.
+    \item \texttt{friends} label: Owner and designated friends can read.
+    \item \texttt{public} label: All authenticated users can read.
+\end{itemize}
+
+\textbf{Type Property}: Returned data has security type matching the label:
+\begin{itemize}
+    \item \texttt{private} $\to$ \textbf{High}
+    \item \texttt{friends} $\to$ \textbf{Medium}
+    \item \texttt{public} $\to$ \textbf{Low}
+\end{itemize}
+
+\subsubsection{WRITE}
+
+Modify or update stored data.
+
+\textbf{Request}:
+
+\begin{verbatim}
+WRITE(data_id, new_data, integrity_check)
+  data_id: identifier of data to modify
+  new_data: updated content
+  integrity_check: signature or authorization token
+\end{verbatim}
+
+\textbf{Response}:
+
+\begin{verbatim}
+{
+  status: success | forbidden | conflict
+  message: human-readable status
+}
+\end{verbatim}
+
+\textbf{Authorization}: Based on integrity label:
+\begin{itemize}
+    \item \texttt{owner-trusted}: Only owner can write (or approved operations).
+    \item \texttt{owner-or-friends}: Owner and friends can write.
+    \item \texttt{anyone}: Any program running in the owner's context can write.
+\end{itemize}
+
+\subsubsection{DELETE}
+
+Delete stored data.
+
+\textbf{Request}:
+
+\begin{verbatim}
+DELETE(data_id)
+\end{verbatim}
+
+\textbf{Response}:
+
+\begin{verbatim}
+{
+  status: success | forbidden | not_found
+}
+\end{verbatim}
+
+\textbf{Authorization}: Only owner can delete.
+
+\subsection{Sharing Operations}
+
+\subsubsection{SHARE}
+
+Grant access to data for specific users or friend groups.
+
+\textbf{Request}:
+
+\begin{verbatim}
+SHARE(data_id, target_users, share_label)
+  data_id: data to share
+  target_users: list of user IDs or groups
+  share_label: {view, view-and-run, modify}
+\end{verbatim}
+
+\textbf{Response}:
+
+\begin{verbatim}
+{
+  status: success | forbidden
+  affected_users: list of users granted access
+}
+\end{verbatim}
+
+\textbf{Effect}: Updates the access control list. Shared users can now access data according to share permissions.
+
+\subsubsection{GRANT\_FRIEND\_ACCESS}
+
+Designate a user as a friend for label-based sharing.
+
+\textbf{Request}:
+
+\begin{verbatim}
+GRANT_FRIEND_ACCESS(target_user)
+\end{verbatim}
+
+\textbf{Effect}: User is added to the friend list. Now can access ``friends''-labeled data of the caller.
+
+\subsubsection{REVOKE\_ACCESS}
+
+Revoke user access to data.
+
+\textbf{Request}:
+
+\begin{verbatim}
+REVOKE_ACCESS(data_id, target_user)
+\end{verbatim}
+
+\textbf{Effect}: User is removed from the access control list.
+
+\subsection{Program Execution Operations}
+
+\subsubsection{RUN\_PROGRAM}
+
+Execute a program on specified data.
+
+\textbf{Request}:
+
+\begin{verbatim}
+RUN_PROGRAM(program_code, input_data_ids, output_label, output_description)
+  program_code: untrusted source code or bytecode
+  input_data_ids: list of data objects to provide as input
+  output_label: label for the program output
+  output_description: metadata for result
+\end{verbatim}
+
+\textbf{Response}:
+
+\begin{verbatim}
+{
+  status: success | type_error | runtime_error
+  output_data_id: identifier of stored result (if successful)
+  type_check_report: Volpano type checking details
+  error_message: reason for failure (if applicable)
+}
+\end{verbatim}
+
+\textbf{Execution Model}:
+
+\begin{enumerate}
+    \item \textbf{Type Checking Phase}: Volpano type system analyzes program.
+    \begin{itemize}
+        \item Assign security types to input data based on labels.
+        \item Check that information flows are safe.
+        \item Infer output type.
+    \end{itemize}
+    \item \textbf{Authorization}: User can only run on data they own or have \texttt{view-and-run} permission.
+    \item \textbf{Execution}: Program runs in a sandboxed environment with restricted privileges.
+    \item \textbf{Output Storage}: Result is stored with inferred security type.
+\end{enumerate}
+
+\textbf{Type Safety Guarantee}: If type checking succeeds, the program cannot leak input data beyond authorized outputs.
+
+\subsubsection{LIST\_PROGRAMS}
+
+List available pre-approved programs.
+
+\textbf{Response}:
+
+\begin{verbatim}
+{
+  programs: [
+    {
+      name: "Image Enhancement",
+      description: "Enhance image contrast and brightness",
+      input_type: image_file,
+      output_type: image_file,
+      type_signature: (High -> High)
+    },
+    ...
+  ]
+}
+\end{verbatim}
+
+\subsubsection{GET\_PROGRAM\_TYPES}
+
+Retrieve the security type signature of a program.
+
+\textbf{Request}:
+
+\begin{verbatim}
+GET_PROGRAM_TYPES(program_id)
+\end{verbatim}
+
+\textbf{Response}:
+
+\begin{verbatim}
+{
+  input_types: [(data_id_1, High), (data_id_2, Medium)],
+  output_type: High,
+  is_safe: true | false,
+  type_errors: [list of violations if unsafe]
+}
+\end{verbatim}
+
+\subsection{Administrative Operations}
+
+\subsubsection{RELABEL}
+
+Change the security label of data (with authorization).
+
+\textbf{Request}:
+
+\begin{verbatim}
+RELABEL(data_id, new_label)
+\end{verbatim}
+
+\textbf{Authorization}: Only owner, with justification for downgrading.
+
+\subsubsection{GET\_ACCESS\_CONTROL\_LIST}
+
+Retrieve the ACL for a data object.
+
+\textbf{Request}:
+
+\begin{verbatim}
+GET_ACL(data_id)
+\end{verbatim}
+
+\textbf{Response}:
+
+\begin{verbatim}
+{
+  owner: user_id,
+  access: [
+    {user: user_id, permission: read|write|execute, granted_by: user_id, timestamp: ...},
+    ...
+  ]
+}
+\end{verbatim}
+
+\subsubsection{AUDIT\_LOG}
+
+Request audit trail for data access and modifications.
+
+\textbf{Request}:
+
+\begin{verbatim}
+AUDIT_LOG(data_id, time_range)
+\end{verbatim}
+
+\textbf{Response}:
+
+\begin{verbatim}
+{
+  events: [
+    {timestamp, user, action, data_id, status},
+    ...
+  ]
+}
+\end{verbatim}
+
 \subsection{Command Specifications}

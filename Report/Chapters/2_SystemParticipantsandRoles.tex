@@ -1,5 +1,73 @@
 \section{System Participants and Roles}
 
+\subsection{System Participants}
+
+\begin{itemize}
+    \item \textbf{Hosting Server}: Central trusted component managing data, enforcing policies, and executing programs.
+    \item \textbf{Data Owner}: User who uploads data and defines security labels and sharing policies.
+    \item \textbf{Authorized User}: Another user who may access data according to sharing policies.
+    \item \textbf{Untrusted Program}: Code executing on the server on behalf of a data owner (may contain bugs or malicious logic).
+    \item \textbf{Attacker}: Adversary attempting to leak confidential data or modify protected data.
+\end{itemize}
+
+\subsection{Trust Model}
+
+\begin{itemize}
+    \item \textbf{Trusted}: Hosting server infrastructure and access control mechanism.
+    \item \textbf{Potentially Untrusted}: User-supplied programs (may have honest bugs or deliberate malicious behavior).
+    \item \textbf{Adversarial}: Authorized users may try to exploit programs to leak data beyond their access rights.
+\end{itemize}
+
 \section{Security Goals}
+
 \subsection{Confidentiality}
+
+\textbf{Objective}: Prevent unauthorized information disclosure.
+
+\textbf{Policy}: Security labels define confidentiality levels:
+
+\begin{itemize}
+    \item \texttt{private}: Only data owner can read.
+    \item \texttt{friends}: Data owner and designated friends can read.
+    \item \texttt{public}: Any authenticated user can read.
+\end{itemize}
+
+\textbf{Requirement}: Even if a program is malicious or buggy, it cannot output private or friend-labeled data to users who lack access. For example:
+
+\begin{itemize}
+    \item A non-friend user cannot extract private medical data through program output.
+    \item A program processing private images cannot leak pixel data to public outputs.
+    \item Implicit leaks (via timing, control flow, or side channels) must also be prevented.
+\end{itemize}
+
+\textbf{Type System Property}: Using security types (Low, High), confidentiality is enforced by preventing High-labeled data from flowing to Low-labeled outputs. The Volpano type checker ensures this statically.
+
 \subsection{Integrity}
+
+\textbf{Objective}: Prevent unauthorized information modification.
+
+\textbf{Policy}: Integrity labels define authority to modify:
+
+\begin{itemize}
+    \item \texttt{owner-trusted}: Only data owner can modify (or server-verified integrity-preserving operations).
+    \item \texttt{owner-or-friends}: Data owner and friends can modify.
+    \item \texttt{anyone}: Any program can read but modifications require owner approval.
+\end{itemize}
+
+\textbf{Requirement}: Data integrity is preserved even if:
+
+\begin{itemize}
+    \item A user attempts unauthorized modification through a program.
+    \item A program contains logic that modifies data beyond its intended scope.
+    \item A user exploits another user's program to corrupt data.
+\end{itemize}
+
+\textbf{Type System Property}: Using the same security type lattice, integrity is enforced by preventing Low-labeled data (untrusted modifications) from flowing into High-labeled (trusted) data. For integrity, the information flow constraint is reversed compared to confidentiality: untrusted (Low) inputs must not modify trusted (High) storage.
+
+\textbf{Dual Property}: Confidentiality and integrity use the same type system but with different interpretations:
+
+\begin{itemize}
+    \item \textbf{Confidentiality}: High (secret) data must not flow to Low (public) outputs.
+    \item \textbf{Integrity}: Low (untrusted) modifications must not flow to High (trusted) data.
+\end{itemize}
+

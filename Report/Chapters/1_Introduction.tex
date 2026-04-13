@@ -1,2 +1,60 @@
 \section{Introduction}
 
+This report presents a comprehensive security analysis of a data hosting server that integrates three advanced features: user-controlled security labeling, policy-based data sharing, and untrusted program execution. The analysis employs the \textbf{Volpano type system method} for secure information flow analysis to ensure that the system prevents both confidentiality and integrity violations.
+
+\subsection{Motivation}
+
+Modern data hosting services face growing security challenges:
+
+\begin{itemize}
+    \item \textbf{Data sensitivity}: Users store increasingly sensitive data (medical records, financial information, personal photos).
+    \item \textbf{Complex sharing requirements}: Data protection often depends on context-specific policies (friends-only photos, private medical records).
+    \item \textbf{Untrusted computation}: Users want to run programs on hosted data (filters, anonymization, analysis), but programs may contain bugs or malicious code.
+    \item \textbf{Compliance needs}: Organizations (hospitals, financial institutions) require formal security guarantees that policies are enforced.
+\end{itemize}
+
+\subsection{Project Scope}
+
+This project designs and verifies a data hosting server that:
+
+\begin{enumerate}
+    \item Allows users to assign security labels to data (e.g., \texttt{private}, \texttt{friends}, \texttt{public}).
+    \item Enforces label-based sharing policies (e.g., only friends can access friend-labeled data).
+    \item Safely executes untrusted programs on user data without leaking information beyond policy.
+    \item Provides formal guarantees against information flow violations.
+\end{enumerate}
+
+\subsection{Analysis Method: Volpano Type System}
+
+Rather than monitoring program execution at runtime, this project uses the \textbf{Volpano method}---a static type system for secure information flow. Key advantages:
+
+\begin{itemize}
+    \item \textbf{Static verification}: Security properties are checked at design/compile time, not runtime.
+    \item \textbf{Type-based enforcement}: Security types (Low, High) prevent unauthorized information flows before execution.
+    \item \textbf{Sound guarantees}: If type checking succeeds, the program provably preserves security policy.
+    \item \textbf{Prevents implicit leaks}: Type rules catch information leaks through control structures, not just direct assignments.
+\end{itemize}
+
+\subsection{Report Structure}
+
+\begin{itemize}
+    \item \textbf{Section 2}: System participants, roles, and security goals (confidentiality and integrity).
+    \item \textbf{Section 3}: Design rationale and Volpano information flow analysis.
+    \item \textbf{Section 4}: Server API specification and command definitions.
+    \item \textbf{Section 5}: Security analysis of each API command using the Volpano method.
+    \item \textbf{Section 6}: Declassification justification for intentional information release.
+    \item \textbf{Section 7}: Team contributions and authorship.
+    \item \textbf{Section 8}: References and resources.
+\end{itemize}
+
+\subsection{Hospital Scenario}
+
+As a motivating example, we consider a hospital using this service:
+
+\begin{itemize}
+    \item \textbf{Data}: Medical images (X-rays, CT scans) and patient records.
+    \item \textbf{Labels}: Private (only patient), Friends (doctors involved in care), Public (anonymized statistics).
+    \item \textbf{Programs}: Image processing (enhancement, analysis), anonymization (removing patient identifiers), statistical analysis.
+    \item \textbf{Guarantee}: Even if a program contains malicious code, it cannot leak private medical data to public outputs without explicit declassification.
+\end{itemize}
+
