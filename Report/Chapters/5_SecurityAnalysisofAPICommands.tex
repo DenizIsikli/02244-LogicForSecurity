@@ -1,6 +1,51 @@
-\section{Security Analysis and Type Checking Examples}
+\section{Security Analysis and Formal Verification}
 
-\subsection{Type Checking Examples}
+\subsection{Type Inference and Checking Semantics}
+
+The Volpano type system operates on three core principles: (1) explicit flow analysis, (2) implicit flow tracking via program counter, and (3) soundness verification.
+
+\textbf{Definition (Type Assignment)}: Given a program $P$ with variables $\{x_1, \ldots, x_n\}$ and input types $\vec{\tau}_{\text{in}} = (\tau_1, \ldots, \tau_k)$, a type assignment $\Gamma$ maps each variable to a security type: $\Gamma: \text{Var} \to \{\text{Low}, \text{Medium}, \text{High}\}$.
+
+\textbf{Definition (Program Counter Level)}: For control structures, the program counter $pc$ tracks the maximum security level of conditions that affect a statement:
+\begin{equation}
+pc := \max\{\text{types of conditions in active scopes}\}
+\end{equation}
+
+\textbf{Type Checking Rule (Assignment)}: An assignment $x := e$ type-checks if and only if:
+\begin{equation}
+\text{type}(e) \sqcup pc \sqsubseteq \text{type}(x)
+\end{equation}
+
+This ensures that both data flows (via $e$) and control flows (via $pc$) respect the security level of the target variable.
+
+\textbf{Definition (Explicit Flow)}: Data dependency where value of variable $y$ directly affects variable $x$ through assignment. Example: $x := y$. Type constraint: $\text{type}(y) \sqsubseteq \text{type}(x)$.
+
+\textbf{Definition (Implicit Flow)}: Control dependency where the execution path depends on secret information, potentially revealing the secret through timing or observable effects. Example: 
+\begin{verbatim}
+if (secret > 0) then
+  public_var := 1
+\end{verbatim}
+Type constraint: $\text{type}(secret) \sqcup \text{type}(1) \sqsubseteq \text{type}(public\_var)$.
+
+\subsection{Formal Security Guarantees}
+
+\textbf{Theorem 1 (Confidentiality Soundness)}: If a program $P$ type-checks successfully in the Volpano system with input types $\vec{\tau}_{\text{in}}$ and output type $\tau_{\text{out}}$, then for any execution of $P$:
+\begin{equation}
+\forall i \in [1, k]: \tau_i \sqsubseteq \tau_{\text{out}} \text{ or } x_i \text{ is not used in } P
+\end{equation}
+
+\textbf{Proof Sketch}: The type system enforces two invariants:
+\begin{enumerate}
+    \item \textbf{Explicit Flow Invariant}: Every assignment $x := e$ satisfies $\text{type}(e) \sqsubseteq \text{type}(x)$. By transitivity, if input $i$ flows to $e$, then $\tau_i \sqsubseteq \text{type}(x)$.
+    \item \textbf{Implicit Flow Invariant}: Inside an if-statement with condition $c: \text{type}(c)$, every assignment $x := e$ satisfies $\text{type}(c) \sqcup \text{type}(e) \sqsubseteq \text{type}(x)$. Thus control information cannot reach lower-security variables.
+\end{enumerate}
+Combined, these ensure no High input can influence any Low output. \qed
+
+\textbf{Corollary 1 (Non-Interference)}: If an input variable $h$ has type High and output variable $o$ has type Low, changing the value of $h$ cannot change the value of $o$ (assuming all other inputs remain fixed). This is the \textit{non-interference} property.
+
+\textbf{Corollary 2 (Information Flow Security)}: No information leaks from High-security inputs to Low-security outputs. Both explicit assignments and implicit control-flow channels are blocked.
+
+\subsection{Type Checking Examples
 
 \textbf{Example 1: Safe Program (Image Processing)}
 
@@ -66,15 +111,52 @@ Type Check:
 
 The loop count would reveal the value of the secret. Type checking blocks this.
 
-\subsection{Soundness Property}
+\subsection{Soundness and Correctness Proofs}
 
-\textbf{Theorem}: If a program type-checks with security types $\tau_1, \ldots, \tau_n$ for inputs and output type $\tau_{\text{out}}$, then:
+\textbf{Theorem 2 (Type Soundness for Explicit Flows)}: If an assignment $x := y$ passes type checking (i.e., $\text{type}(y) \sqsubseteq \text{type}(x)$), then no information leaks from $y$ to $x$ beyond the declared types.
 
+\textbf{Proof}: By type ordering, $\text{type}(y) \sqsubseteq \text{type}(x)$ means the value of $y$ can only flow to $x$ if $x$'s security level permits it. If $\text{type}(y) = \text{High}$ and $\text{type}(x) = \text{Low}$, the type constraint is violated and the assignment is rejected. \qed
+
+\textbf{Theorem 3 (Implicit Flow Prevention)}: Consider a conditional statement:
+\begin{verbatim}
+if (c) then S₁ else S₂
+\end{verbatim}
+If all statements in $S_1$ and $S_2$ type-check with $pc = \text{type}(c)$, then the execution of either branch does not leak information about $c$ to Low-security variables.
+
+\textbf{Proof}: Any assignment $x := e$ inside the conditional must satisfy $(pc \sqcup \text{type}(e)) \sqsubseteq \text{type}(x)$. Since $pc = \text{type}(c)$, we have $(\text{type}(c) \sqcup \text{type}(e)) \sqsubseteq \text{type}(x)$. If $\text{type}(c) = \text{High}$ and $\text{type}(x) = \text{Low}$, the constraint fails. Thus, no High-dependent assignment can reach Low variables. \qed
+
+\textbf{Theorem 4 (Loop Termination Timing Leak Prevention)}: For loops with secret-dependent loop counts:
+\begin{verbatim}
+while (secret > 0):
+  x := f(x)
+\end{verbatim}
+If $\text{type}(secret) = \text{High}$ and $\text{type}(x) = \text{Low}$, the type system rejects this program.
+
+\textbf{Proof}: The loop condition has type High, so $pc = \text{High}$. All assignments inside the loop must satisfy $(\text{High} \sqcup \text{type}(f(x))) \sqsubseteq \text{type}(x)$. For Low $x$, this becomes $(\text{High} \sqcup \cdots) \sqsubseteq \text{Low}$, which fails. The timing side channel is blocked at compile time. \qed
+
+\subsection{Application to API Commands}
+
+For the secure data hosting system, Volpano's guarantees apply to each command:
+
+\textbf{READ Command}: 
 \begin{equation}
-\forall i: \tau_i \sqsubseteq \tau_{\text{out}} \text{ or input } i \text{ is unused}
+\text{READ}(\text{data} : \tau) \to (\text{output} : \tau)
 \end{equation}
+Type preservation: output type matches data type. No downgrading without declassification.
 
-\textbf{Corollary}: High input cannot produce Low output. Malicious programs that attempt explicit or implicit leaks are rejected at type-check time.
+\textbf{WRITE Command}:
+\begin{equation}
+\text{WRITE}(\text{dest} : \tau_{\text{dest}}, \text{source} : \tau_{\text{src}}) \to \text{void}
+\end{equation}
+Constraint: $\tau_{\text{src}} \sqsubseteq \tau_{\text{dest}}$. Prevents untrusted data from corrupting trusted storage.
+
+\textbf{RUN\_PROGRAM Command}:
+\begin{equation}
+\text{RUN\_PROGRAM}(\text{inputs} : \vec{\tau}, \text{code} : P) \to (\text{output} : \tau_{\text{out}})
+\end{equation}
+Constraint: $P$ type-checks with input types $\vec{\tau}$ and output type $\tau_{\text{out}}$. By Theorem 1, no High input can influence Low output.
+
+\subsection{Type Checking Examples
 
 \subsection{Hospital Application}
 
