@@ -1,21 +1,27 @@
 \section{Introduction}
 
-This report analyzes a data hosting server using the \textbf{Volpano type system method} for secure information flow. The system supports three features: user-controlled security labeling, policy-based data sharing, and untrusted program execution. We provide formal guarantees that confidential data cannot leak to unauthorized users through either explicit assignments or implicit control-flow channels.
+This report analyzes a data hosting server using the \textbf{Myers-Liskov Decentralized Model for Information Flow Control} \cite{ML97}. The system supports three critical features: (1) user-controlled security labeling via principals, (2) policy-based data sharing with fine-grained access control, and (3) untrusted program execution with static analysis guarantees. We provide formal security assurance that confidential medical data cannot leak to unauthorized parties even when programs are malicious, and that data owners can explicitly declassify information through authorized transformations like de-identification and statistical aggregation.
 
 \subsection{System Overview}
 
-The server hosts medical data (hospital scenario) with three confidentiality levels: \texttt{private} (High, owner-only), \texttt{friends} (Medium, designated friends), and \texttt{public} (Low, all users). Users can execute programs on data, but these programs are untrusted. The Volpano method ensures that even malicious programs cannot violate information flow policies through static type checking performed before execution.
+The server hosts medical data (hospital scenario) where each data object carries a \textit{decentralized label} of the form $p: \{r_1, r_2, \ldots\}$, indicating that principal $p$ owns the data and permits readers $\{r_1, r_2, \ldots\}$ to access it. For example, $\text{patient}_1: \{\text{doctor}_1, \text{patient}_1\}$ means the patient principal owns medical records readable only by the treating doctor and the patient themselves. This label format enables decentralized authority: each principal independently specifies who can read their data, without requiring a central security administrator.
 
-\subsection{Volpano Type System Method}
+The Decentralized Model provides four key advantages:
 
-The Volpano approach provides a \textbf{sound type system} for enforcing secure information flow:
+\begin{enumerate}
+    \item \textbf{Decentralized Authority}: Each data owner specifies their own policies independently. No central bottleneck; patients, doctors, and researchers each make access control decisions.
+    \item \textbf{Fine-Grained Sharing}: Data can have multiple owners; all must agree to release information (intersection of readers). Enables collaborative scenarios where combined data requires multiple parties' consent.
+    \item \textbf{Explicit Declassification}: Data owners can downgrade labels (e.g., anonymized records $\to$ public) without requiring central approval. Principals have authority over their own policies.
+    \item \textbf{Static Verification}: Programs are analyzed before execution to certify compliance with labels, eliminating runtime overhead and preventing timing side-channel information leaks.
+\end{enumerate}
+
+\subsection{Myers-Liskov vs. Volpano}
+
+The Myers-Liskov model improves upon traditional centralized approaches in critical ways for medical data systems:
 
 \begin{itemize}
-    \item \textbf{Type ordering}: Low $\sqsubseteq$ Medium $\sqsubseteq$ High, where High represents confidential data.
-    \item \textbf{Type rules}: Enforce that High information cannot flow to Low outputs (explicit leaks) and control dependencies don't leak information (implicit flows via program counter).
-    \item \textbf{Soundness}: Type checking guarantees no unauthorized information flows.
-    \item \textbf{Static verification}: Security is checked at design time, eliminating runtime overhead.
+    \item \textbf{Decentralization}: Volpano uses fixed, centralized lattice (Low, Medium, High). Myers-Liskov allows each principal independent policies, essential for multi-stakeholder systems where patients, doctors, researchers have distinct authority.
+    \item \textbf{Declassification}: Volpano provides no principled declassification. Myers-Liskov supports owner-authorized downgrading, enabling legitimate uses (anonymization, aggregation) while maintaining formal security.
+    \item \textbf{Scalability}: In hospital with hundreds of patients, each becomes principal with own policies. Volpano's fixed 3-level lattice cannot express thousands of independent policies.
 \end{itemize}
-
-\textbf{Key distinction from Denning's approach}: Volpano uses type inference to automatically determine security types, whereas Denning's label-based method requires manual label assignment and constraint solving.
 

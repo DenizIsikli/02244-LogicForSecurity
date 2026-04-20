@@ -1,65 +1,214 @@
-\section{Volpano Type System Analysis}
+\section{Design Choices and Information Flow Model}
 
-\subsection{Type Lattice and Ordering}
+This section documents the design choices made for the system. For each design dimension (lattice, programs, declassification, scope), we explain the choice, rationale against project guidelines, and alternatives rejected.
 
-The Volpano method assigns security types to variables. The type lattice is:
+\subsection{Design Choice 1: Lattice Model (Decentralized vs. Fixed Global)}
+
+\subsubsection{Our Choice: Decentralized Per-Principal Labels}
+
+Format: $L = \{p_1: R_1, p_2: R_2, \ldots\}$ where principal $p_i$ specifies their own reader set $R_i$.
+
+\textbf{Rationale}: Hospital has hundreds of patients and institutional roles (doctors, nurses, researchers, administrators). Fixed 3-level lattice (Low, Medium, High) cannot express nuanced policies. Patient wants data readable by personal doctor only, not all hospital staff. Researcher wants study data readable by study team only, not hospital administrators.
+
+\textbf{Decentralized Solution}: Each principal defines label independently ($p: \{readers\}$). Patient specifies doctor; researcher specifies study team. Labels compose via join (intersection of readers). Scales to arbitrary principals with heterogeneous policies.
+
+\textbf{Formal Specification}:
+
 \begin{equation}
-\textbf{Low} \sqsubseteq \textbf{Medium} \sqsubseteq \textbf{High}
+L = \{(p_1: R_1), (p_2: R_2), \ldots, (p_k: R_k)\}
 \end{equation}
 
-The ordering relation represents permissible information flow: $\tau_1 \sqsubseteq \tau_2$ means that information of type $\tau_1$ can flow to type $\tau_2$. The join operation is:
-\begin{align}
-\textbf{Low} \sqcup \textbf{Low} &= \textbf{Low} \\
-\textbf{Low} \sqcup \textbf{Medium} &= \textbf{Medium} \\
-\textbf{Low} \sqcup \textbf{High} &= \textbf{High}
-\end{align}
+where each $p_i \in$ Principals and $R_i \subseteq$ Principals (reader set).
 
-\subsection{Type Inference Rules}
+\textbf{Label Ordering}: $L_1 \leq L_2$ iff for all principals $p$, readers in $L_1$ superset of readers in $L_2$:
 
-\textbf{Declaration}: Variables receive declared types: $\vdash x : \tau$ where $\tau \in \{\textbf{Low}, \textbf{Medium}, \textbf{High}\}$
-
-\textbf{Constants}: Literals are type Low: $\vdash c : \textbf{Low}$
-
-\textbf{Expressions}: Binary operations combine types via join:
 \begin{equation}
-\frac{\vdash e_1 : \tau_1 \quad \vdash e_2 : \tau_2}{\vdash e_1 \oplus e_2 : \tau_1 \sqcup \tau_2}
+L_1 \leq L_2 \text{ iff } \forall p, R_1(p) \supseteq R_2(p)
 \end{equation}
 
-\textbf{Assignments}: The type of the expression must be at most the type of the variable:
+Intuition: if $L_1$ restricts more (fewer readers), information with $L_1$ can safely flow to $L_2$.
+
+\textbf{Join Operation}: $L_1 \sqcup L_2$ combines both labels by taking reader intersection for each principal:
+
 \begin{equation}
-\frac{\vdash e : \tau_e \quad \tau_e \sqsubseteq \tau_x}{\vdash x := e}
+L_1 \sqcup L_2 = \{(p: R_1(p) \cap R_2(p)) : p \in \text{Principals}\}
 \end{equation}
 
-This prevents High-to-Low flows: if $\tau_x = \textbf{Low}$ and $\tau_e = \textbf{High}$, then $\textbf{High} \not\sqsubseteq \textbf{Low}$, so the assignment is a type error.
+Result is most permissive label respecting both restrictions: only readers authorized for ALL input labels can access combined output.
 
-\subsection{Implicit Flow Analysis}
+\textbf{Alternative Rejected}: Centralized global lattice (Volpano style with Low, Medium, High). Simpler but inflexible. Forces all principals into pre-defined security levels. Doesn't support hospital scenario where each patient has independent policies. Doesn't scale to multi-stakeholder systems.
 
-Control structures create implicit information flows. The Volpano method tracks a \textbf{program counter (pc)} level:
+\subsubsection{Label Polymorphism}
 
-\textbf{If Statement}: The condition's type becomes the pc level within the guarded block:
-\begin{equation}
-\frac{\vdash b : \tau_b \quad \text{pc} := \tau_b \quad \vdash S_1, S_2}{\vdash \textbf{if } b \textbf{ then } S_1 \textbf{ else } S_2}
-\end{equation}
-
-Any assignment within the if block must satisfy: $\text{pc} \sqcup \tau_e \sqsubseteq \tau_x$.
-
-\textbf{Example}: If a condition depends on a High variable (secret), then any assignment in the if block must go to a High variable, otherwise the assignment leaks information about the condition.
+Myers-Liskov supports label polymorphism: procedures generic over labels. Example:
 
 \begin{verbatim}
-if (secret : High) then          // pc = High
-    public_output : Low := 1     // ERROR: High ⊔ Low ⊑ Low? No!
+procedure filter_image[L](input: Image[L]) → Image[L]
+  return apply_kernel(input)
+end
 \end{verbatim}
 
-The type checker rejects this because High $\not\sqsubseteq$ Low.
+Same code instantiated with any label (patient: {doctor} or public). Generic code works across security levels without recompilation. Improves reusability and modularity.
 
-\subsection{Application to Data Hosting}
+\subsection{Design Choice 2: Program Model (White-Box, Black-Box, or Hybrid)}
 
-\textbf{Data labels map to types}:
+\subsubsection{Our Choice: Hybrid White-Box + Black-Box Support}
+
+Hospital has two categories of programs:
 \begin{itemize}
-    \item private → High: Cannot assign to Low variables
-    \item friends → Medium: Can assign to Medium or High, but not Low
-    \item public → Low: Can assign to any variable
+\item \textbf{Research Programs}: Custom ML models, image analysis algorithms written by researchers. Source code available. Can type-check.
+\item \textbf{Legacy Programs}: Pre-existing filters, tools. Vendor binaries. No source code.
 \end{itemize}
 
-\textbf{Program execution}: When a program $P$ runs on inputs $\vec{x}$ with types $\vec{\tau}$, the Volpano type checker verifies that the program body satisfies all type constraints. If type checking passes, the output type $\tau_{\text{out}}$ is computed. Programs are rejected at type-check time if they would leak information.
+Hybrid approach enables both: researchers write white-box for maximum security; hospital uses legacy with conservative labeling.
+
+\subsubsection{White-Box Programs: Type-Checking for Formal Security}
+
+Server receives program source code. Three-rule type-checking enforced:
+
+\begin{enumerate}
+\item \textbf{Explicit Flow Rule}: For assignment $x := e$, verify $\text{label}(e) \leq \text{label}(x)$. Prevents labeled data flowing to less-restricted variables.
+
+\item \textbf{Implicit Flow Rule}: Inside conditional if($c$) with label $\text{label}(c) = L_c$, program counter assigned $L_{pc} = L_c$. All assignments satisfy $L_{pc} \sqcup \text{label}(e) \leq \text{label}(x)$. Prevents control-flow decisions leaking through variable values.
+
+\item \textbf{Declassification Rule}: Explicit declassify() calls require owner authorization. Declassifications documented in audit log.
+\end{enumerate}
+
+If type-checking succeeds: program certified secure; execute. If fails: reject; no execution.
+
+\textbf{Guarantee}: Type soundness (Theorem 1, Section 5). Successful type-check $\Rightarrow$ no information flows from secret inputs to less-authorized outputs.
+
+\subsubsection{Black-Box Programs: Conservative Labeling}
+
+No source available; static analysis impossible. Output conservatively labeled as join of all inputs:
+
+\begin{equation}
+L_{\text{out}} = L_1 \sqcup L_2 \sqcup \cdots \sqcup L_k
+\end{equation}
+
+Rationale: Most permissive label consistent with all inputs. Even if binary leaks information, output protected by most-restrictive-input label.
+
+\textbf{Trade-off}: No formal analysis but label soundness guaranteed. May over-restrict (label creep) if many diverse inputs joined.
+
+\textbf{Example}: Binary takes patient data (readers: {doctor}) + hospital data (readers: {hospital}) + public data. Join: readers = {} (empty). Output readable by nobody (most restrictive).
+
+Mitigation: Type-check white-box when possible. For legacy binaries, accept conservative labeling.
+
+\subsubsection{Alternatives Rejected}
+
+\begin{itemize}
+\item \textbf{Fixed Programs Only}: Inflexible. Hospital cannot add custom analysis.
+\item \textbf{User-Uploaded Source Only}: Requires all code available. Incompatible with legacy vendor binaries.
+\item \textbf{Black-Box Only}: No formal analysis. Over-restrictive labels limit research.
+\end{itemize}
+
+Hybrid approach balances: formal verification where possible, practical support for existing code.
+
+\subsection{Design Choice 3: Declassification Support (Yes or No)}
+
+\subsubsection{Our Choice: Owner-Authorized Declassification}
+
+Medical research requires data sharing workflows: Patient consents → de-identification → public aggregates. Three-step process requires controlled downgrading at each stage.
+
+\textbf{Without Declassification}: Once data labeled private, cannot ever be released. Blocks legitimate research. Unrealistic for hospitals with research missions.
+
+\textbf{With Owner-Authorized Declassification}: Principal $o$ can expand readers on $o$-labeled data: $o: R_1 \to o: R_2$ (where $R_2 \supseteq R_1$).
+
+\begin{itemize}
+\item Not security violation: owner has authority over own policies
+\item Monotonic: only adds readers, never removes
+\item Auditable: all changes logged with timestamp, principal, justification, signature
+\item Justified: formal conditions (k-anonymity, aggregation, differential privacy)
+\end{itemize}
+
+\subsubsection{Formal Conditions for Declassification}
+
+Three conditions justify expanding reader sets:
+
+\textbf{Condition 1: K-Anonymity} ($k=5$ for hospital). Dataset is k-anonymous if each quasi-identifier combination appears $\geq 5$ times. Re-identification risk $\leq 20\%$ (HIPAA standard). Justifies expansion to researchers.
+
+\textbf{Condition 2: Aggregation}. Statistics (means, counts) computed from groups $\geq k$ individuals inherently non-sensitive. Individual values hidden; only population statistics observable. Justifies public release.
+
+\textbf{Condition 3: Differential Privacy}. Query response satisfies $\epsilon$-differential privacy if response distribution indistinguishable for databases differing by one record. Attacker cannot determine if specific patient included. Justifies public release of query responses.
+
+\textbf{Alternative Rejected}: No declassification. Simpler security model but prevents research, collaboration. Unrealistic for multi-stakeholder systems.
+
+\subsection{Design Choice 4: Information Flow Framework}
+
+\subsubsection{Our Choice: Myers-Liskov Decentralized Model}
+
+Three candidate frameworks from course:
+
+\begin{enumerate}
+\item \textbf{Denning \& Denning (1977)}: Foundational. Manual proofs of non-interference. No principled declassification. No support for multi-principal policies.
+
+\item \textbf{Volpano (1996)}: Type-based flow. Fixed centralized lattice (Low, High). Type system enforces flow control. Sound and complete for fixed lattices. But:
+  \begin{itemize}
+  \item Fixed lattice cannot express per-principal policies
+  \item No declassification support (or ad-hoc only)
+  \item Doesn't scale to thousands of principals
+  \end{itemize}
+
+\item \textbf{Myers-Liskov (1997)}: Decentralized model. Each principal defines independent policies. Directly addresses hospital scenario:
+  \begin{itemize}
+  \item Per-principal policies ($p: \{readers\}$)
+  \item Owner-authorized declassification
+  \item Label polymorphism for code reuse
+  \item Multi-principal reasoning
+  \item Arbitrary principal scaling
+  \end{itemize}
+\end{enumerate}
+
+\textbf{Fit for Hospital}: Myers-Liskov directly fits. Patients (principals) control own labels. Doctors (principals) control access to medical records. Researchers (principals) control study datasets. Institutional policies (hospital principal) applied separately. Multi-stakeholder collaboration natural.
+
+\textbf{Alternative Rejected}: Volpano or Denning. Centralized, no declassification support, no multi-principal reasoning. Would require extensive custom extensions (violates project guideline: "do not invent custom variant").
+
+\subsection{Design Choice 5: Scope (Confidentiality vs. Confidentiality + Integrity)}
+
+\subsubsection{Our Choice: Both Confidentiality and Integrity}
+
+Hospital cares about both:
+\begin{itemize}
+\item \textbf{Confidentiality}: Medical data must not leak to unauthorized parties. Ensures privacy.
+\item \textbf{Integrity}: Medication records, treatment plans must not be altered. Ensures correct medical treatment.
+\end{itemize}
+
+Information flow labels protect both:
+\begin{itemize}
+\item \textbf{Confidentiality Labels}: $\text{principal}: \{\text{authorized\_readers}\}$. Restricts who can read.
+\item \textbf{Integrity Labels}: $\text{principal}: \{\text{authorized\_writers}\}$. Restricts who can modify.
+\end{itemize}
+
+Example: Medication database labeled $\text{hospital}: \{\text{hospital}\}$ (only hospital staff write). Untrusted program can read medications but cannot modify instructions.
+
+\textbf{Information Flow Analysis Covers Both}:
+\begin{itemize}
+\item Read policy: implicit flow through conditionals depends on readable data
+\item Write policy: explicit flow rules prevent untrusted data modifying trusted output
+\end{itemize}
+
+\textbf{Alternative Rejected}: Confidentiality only. Simpler but incomplete. Hospital also needs guarantee that untrusted programs cannot corrupt records.
+
+\subsection{Summary: Design Space Navigation}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Dimension} & \textbf{Options} & \textbf{Our Choice} \\
+\hline
+Lattice & Fixed, Customizable & Decentralized per-principal \\
+\hline
+Programs & Fixed, User-Uploaded, Hybrid & Hybrid (white + black-box) \\
+\hline
+Declassification & No, Yes & Yes, owner-authorized \\
+\hline
+Framework & Denning, Volpano, Myers-Liskov & Myers-Liskov \\
+\hline
+Scope & Confidentiality, Both & Both (confidentiality + integrity) \\
+\hline
+\end{tabular}
+\end{table}
+
+Each choice justified by hospital medical scenario requirements and project guidelines. No ad-hoc extensions; pure Myers-Liskov framework applied to medical domain.
 

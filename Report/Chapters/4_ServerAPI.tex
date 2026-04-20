@@ -1,43 +1,39 @@
-\section{Core Operations}
+\section{Server API Design}
 
-The server provides API commands that interact with the Volpano type system:
+The server provides five main commands, all enforcing label-based access control and non-interference properties.
 
-\subsection{Data Operations}
+\subsection{Data Management Commands}
 
-\textbf{UPLOAD}$(data, label)$: Store data with confidentiality label (private, friends, public). Stored objects have type High, Medium, or Low respectively.
+\textbf{UPLOAD(data, principal, readers)}
 
-\textbf{READ}$(data\_id, user)$: Return data if user has access. Type of returned data matches the label:
-\begin{itemize}
-    \item private → High: Only owner can read
-    \item friends → Medium: Owner and designated friends can read
-    \item public → Low: All users can read
-\end{itemize}
+Store data with decentralized label $L = \text{principal}: \text{readers}$. Returns data\_id. Only owner and authorized readers can access via READ.
 
-\textbf{WRITE}$(data\_id, new\_data)$: Modify data. Authorization is checked via integrity labels. The updated data has type $\tau_{\text{old}} \sqcup \tau_{\text{new}}$.
+\textbf{READ(data\_id, caller)}
 
-\subsection{Program Execution}
+Retrieve data if caller authorized. Check: is caller = owner or caller $\in$ readers? If yes, return data with label. If no, return error. Enforces confidentiality by access control.
 
-\textbf{RUN\_PROGRAM}$(program, input\_ids, output\_label)$: Execute program with Volpano type checking.
+\subsection{Program Execution Commands}
 
-\textbf{Process}:
+\textbf{ANALYZE\_WHITEBOX(program\_source, input\_ids, output\_principal)}
+
+Upload program source code. Server type-checks against input labels:
 \begin{enumerate}
-    \item Assign types to inputs based on their labels
-    \item Type-check program body (verify no High→Low flows)
-    \item If type-check passes, execute program
-    \item Store output with inferred type
-    \item If type-check fails, reject program (no execution)
+\item Retrieve input labels $L_1, \ldots, L_k$ from stored data
+\item Parse program; assign each variable a label
+\item Check: for all assignments $x := e$, label$(e) \leq$ label$(x)$
+\item Check: program counter tracking prevents implicit flows
+\item If type-checking succeeds: execute program, infer output label, store
+\item If failure: reject program, log error (no execution)
 \end{enumerate}
 
-\subsection{Declassification}
+Guarantee: successful analysis $\Rightarrow$ no information leaks.
 
-\textbf{RELABEL}$(data\_id, new\_label)$ with declassification: Owner can downgrade labels (e.g., private→public) for approved transformations:
+\textbf{RUN\_BLACKBOX(binary\_path, input\_ids)}
 
-\begin{itemize}
-    \item \textbf{Anonymization}: Remove PII (names, IDs, contact info)
-    \item \textbf{Aggregation}: Compute statistics (mean, median) → safe for public
-    \item \textbf{Differential Privacy}: Add calibrated noise to queries
-\end{itemize}
+Execute untrusted binary. Output labeled conservatively: $L_{\text{out}} = L_1 \sqcup L_2 \sqcup \cdots$ (join of input labels). Result: no information leaks beyond most restrictive input.
 
-These operations are marked as trusted declassifiers and bypass normal type checking. Example: anonymize patient records → output labeled Low (safe for researchers).
+\subsection{Declassification Command}
 
-\subsection{Command Specifications}
+\textbf{DECLASSIFY(data\_id, new\_readers, justification, authorizing\_principal)}
+
+Expand reader set. Check: is authorizing\_principal the owner listed in current label? Yes $\Rightarrow$ proceed; No $\Rightarrow$ deny. Update label from $o: R$ to $o: R'$ (with $R' \supseteq R$). Log: timestamp, principal, justification, signature. Enables owner-authorized access expansion for research, de-identification, etc.

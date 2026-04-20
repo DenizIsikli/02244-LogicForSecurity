@@ -1,171 +1,184 @@
 \section{Security Analysis and Formal Verification}
 
-\subsection{Type Inference and Checking Semantics}
+This section provides rigorous security arguments for each API command, proving non-interference: secret inputs don't affect public outputs. We use formal label ordering, information flow rules, type soundness theorems, and comprehensive examples demonstrating that the design prevents unauthorized information leaks.
 
-The Volpano type system operates on three core principles: (1) explicit flow analysis, (2) implicit flow tracking via program counter, and (3) soundness verification.
+\subsection{Formal Foundations}
 
-\textbf{Definition (Type Assignment)}: Given a program $P$ with variables $\{x_1, \ldots, x_n\}$ and input types $\vec{\tau}_{\text{in}} = (\tau_1, \ldots, \tau_k)$, a type assignment $\Gamma$ maps each variable to a security type: $\Gamma: \text{Var} \to \{\text{Low}, \text{Medium}, \text{High}\}$.
-
-\textbf{Definition (Program Counter Level)}: For control structures, the program counter $pc$ tracks the maximum security level of conditions that affect a statement:
+\textbf{Label Ordering}: $L_1 \leq L_2$ (L₁ more restrictive, more confidential) iff for each principal $o$, readers in $L_1$ is a superset of readers in $L_2$:
 \begin{equation}
-pc := \max\{\text{types of conditions in active scopes}\}
+L_1 \leq L_2 \text{ iff } \forall o, R_1(o) \supseteq R_2(o)
 \end{equation}
 
-\textbf{Type Checking Rule (Assignment)}: An assignment $x := e$ type-checks if and only if:
-\begin{equation}
-\text{type}(e) \sqcup pc \sqsubseteq \text{type}(x)
-\end{equation}
+Intuition: if $L_1$ restricts access more (fewer readers), then $L_1$ can safely flow to an observer authorized for $L_2$ (more readers). This ordering is antisymmetric, reflexive, transitive, forming a partial order over labels.
 
-This ensures that both data flows (via $e$) and control flows (via $pc$) respect the security level of the target variable.
+\textbf{Information Flow Rule}: A value with label $L_1$ can flow to a variable with label $L_2$ iff $L_1 \leq L_2$. This prevents labeled data from leaking to less-restrictive outputs. Violation: $L_1 \not\leq L_2$ means readers in $L_1$ are not a superset of readers in $L_2$; some observer of $L_2$ data cannot see $L_1$ data, preventing covert channels through such assignments.
 
-\textbf{Definition (Explicit Flow)}: Data dependency where value of variable $y$ directly affects variable $x$ through assignment. Example: $x := y$. Type constraint: $\text{type}(y) \sqsubseteq \text{type}(x)$.
+\textbf{Lemma 1 (Label Join)}: When combining data from two sources with labels $L_1$ and $L_2$, the result has label $L_1 \sqcup L_2 = \{(o: R_1(o) \cap R_2(o))\}$ (readers are intersection). This is the most permissive label respecting both restrictions: $L_1 \sqcup L_2 \leq L_1$ and $L_1 \sqcup L_2 \leq L_2$. Any observer outside all reader sets cannot access the result.
 
-\textbf{Definition (Implicit Flow)}: Control dependency where the execution path depends on secret information, potentially revealing the secret through timing or observable effects. Example: 
-\begin{verbatim}
-if (secret > 0) then
-  public_var := 1
-\end{verbatim}
-Type constraint: $\text{type}(secret) \sqcup \text{type}(1) \sqsubseteq \text{type}(public\_var)$.
+\textbf{Lemma 2 (Program Counter Lattice)}: Inside conditional if($c$) where condition has label $\text{label}(c) = L_c$, the program counter is assigned label $L_{pc} = L_c$. Any assignment inside the conditional must satisfy $L_{pc} \sqcup \text{label}(e) \leq \text{label}(x)$. This prevents implicit flows: observer of $x$ cannot infer control-flow decisions based on secret $c$.
 
-\subsection{Formal Security Guarantees}
+\subsection{Type Soundness Theorem}
 
-\textbf{Theorem 1 (Confidentiality Soundness)}: If a program $P$ type-checks successfully in the Volpano system with input types $\vec{\tau}_{\text{in}}$ and output type $\tau_{\text{out}}$, then for any execution of $P$:
-\begin{equation}
-\forall i \in [1, k]: \tau_i \sqsubseteq \tau_{\text{out}} \text{ or } x_i \text{ is not used in } P
-\end{equation}
-
-\textbf{Proof Sketch}: The type system enforces two invariants:
+\textbf{Theorem 1 (Type Safety)}: If a program $P$ successfully type-checks against input labels $L_1, \ldots, L_k$ and produces output $x$ with label $L_x$, then for any two executions of $P$ on inputs with labels $L_1, \ldots, L_k$:
 \begin{enumerate}
-    \item \textbf{Explicit Flow Invariant}: Every assignment $x := e$ satisfies $\text{type}(e) \sqsubseteq \text{type}(x)$. By transitivity, if input $i$ flows to $e$, then $\tau_i \sqsubseteq \text{type}(x)$.
-    \item \textbf{Implicit Flow Invariant}: Inside an if-statement with condition $c: \text{type}(c)$, every assignment $x := e$ satisfies $\text{type}(c) \sqcup \text{type}(e) \sqsubseteq \text{type}(x)$. Thus control information cannot reach lower-security variables.
+\item If the two executions differ only in secret inputs (inputs with $L_i$ such that observer $o \notin R_i$), then observers outside $L_x$ reader sets observe identical outputs.
+\item No information about secret inputs leaks to observers outside $L_x$ reader sets through explicit assignments, control flow, or timing.
 \end{enumerate}
-Combined, these ensure no High input can influence any Low output. \qed
 
-\textbf{Corollary 1 (Non-Interference)}: If an input variable $h$ has type High and output variable $o$ has type Low, changing the value of $h$ cannot change the value of $o$ (assuming all other inputs remain fixed). This is the \textit{non-interference} property.
+\textit{Proof sketch}: Type-checking enforces (1) explicit flow rule for all assignments, (2) implicit flow rule (program counter) for all conditionals. By induction on program structure, every variable written inside a conditional $c$ has label $\sqcup$ of $c$ and its assigned value. By label ordering transitivity, no secret information flows to less-restrictive outputs. Timing attacks prevented because type-checking ensures all branches have same structure, preventing timing-based inference of control flow.
 
-\textbf{Corollary 2 (Information Flow Security)}: No information leaks from High-security inputs to Low-security outputs. Both explicit assignments and implicit control-flow channels are blocked.
+\subsection{API Command Security Arguments}
 
-\subsection{Type Checking Examples
+\subsubsection{UPLOAD(data, principal, readers)}
 
-\textbf{Example 1: Safe Program (Image Processing)}
+\textbf{Security Argument}: Server stores data with label $L = \text{principal}: \text{readers}$. Invariant: only principals in $\{\text{principal}\} \cup \text{readers}$ have access (enforced by READ access control). All other principals prevented from observing data or its effects through subsequent reads or computations on this data.
 
-\begin{verbatim}
-Input:  medical_image : High
-Output: result : ?
+Formal guarantee: if caller $\notin \{\text{principal}\} \cup \text{readers}$, then READ returns error (not data). No information about data leaked to unauthorized callers. $\checkmark$ \textbf{Confidentiality maintained.}
 
-Program:  result := enhance(medical_image)
+\subsubsection{READ(data\_id, caller)}
 
-Type Check:
-  enhance is type-preserving: High → High
-  Assignment: High ⊑ result_type? 
-  Yes, if result is declared High or inferred as High
-  Verdict: ✓ SAFE (output labeled private/High)
-\end{verbatim}
-
-The output is private and only the owner can access it.
-
-\textbf{Example 2: Explicit Leak (Malicious Program)}
-
-\begin{verbatim}
-Input:  secret : High, public_out : Low
-Output: result : ?
-
-Program:
-  result := secret + 1
-  if (result > 1000) then
-    public_out := 1
-  else
-    public_out := 0
-
-Type Check:
-  Line 1: High + Low = High ⊔ Low = High
-          result : High (inferred)
-  Line 2: condition is High, so pc = High
-  Line 4: Assignment public_out : Low
-          Check: pc ⊔ 1 ⊑ Low?
-          High ⊔ Low ⊑ Low? NO!
-  Verdict: ✗ TYPE ERROR - Implicit leak detected
-\end{verbatim}
-
-The program is rejected. The malicious attempt to leak via control flow is blocked.
-
-\textbf{Example 3: Implicit Leak via Timing}
-
-\begin{verbatim}
-Input:  secret : High, counter : Low
-Output: counter
-
-Program:
-  while (secret > 0):
-    counter := counter + 1
-    secret := secret - 1
-  return counter
-
-Type Check:
-  Condition: secret is High, so pc = High
-  Assignment in loop: counter : Low
-  Check: pc ⊔ (counter+1) ⊑ Low?
-  High ⊔ Low ⊑ Low? NO!
-  Verdict: ✗ TYPE ERROR - Timing leak detected
-\end{verbatim}
-
-The loop count would reveal the value of the secret. Type checking blocks this.
-
-\subsection{Soundness and Correctness Proofs}
-
-\textbf{Theorem 2 (Type Soundness for Explicit Flows)}: If an assignment $x := y$ passes type checking (i.e., $\text{type}(y) \sqsubseteq \text{type}(x)$), then no information leaks from $y$ to $x$ beyond the declared types.
-
-\textbf{Proof}: By type ordering, $\text{type}(y) \sqsubseteq \text{type}(x)$ means the value of $y$ can only flow to $x$ if $x$'s security level permits it. If $\text{type}(y) = \text{High}$ and $\text{type}(x) = \text{Low}$, the type constraint is violated and the assignment is rejected. \qed
-
-\textbf{Theorem 3 (Implicit Flow Prevention)}: Consider a conditional statement:
-\begin{verbatim}
-if (c) then S₁ else S₂
-\end{verbatim}
-If all statements in $S_1$ and $S_2$ type-check with $pc = \text{type}(c)$, then the execution of either branch does not leak information about $c$ to Low-security variables.
-
-\textbf{Proof}: Any assignment $x := e$ inside the conditional must satisfy $(pc \sqcup \text{type}(e)) \sqsubseteq \text{type}(x)$. Since $pc = \text{type}(c)$, we have $(\text{type}(c) \sqcup \text{type}(e)) \sqsubseteq \text{type}(x)$. If $\text{type}(c) = \text{High}$ and $\text{type}(x) = \text{Low}$, the constraint fails. Thus, no High-dependent assignment can reach Low variables. \qed
-
-\textbf{Theorem 4 (Loop Termination Timing Leak Prevention)}: For loops with secret-dependent loop counts:
-\begin{verbatim}
-while (secret > 0):
-  x := f(x)
-\end{verbatim}
-If $\text{type}(secret) = \text{High}$ and $\text{type}(x) = \text{Low}$, the type system rejects this program.
-
-\textbf{Proof}: The loop condition has type High, so $pc = \text{High}$. All assignments inside the loop must satisfy $(\text{High} \sqcup \text{type}(f(x))) \sqsubseteq \text{type}(x)$. For Low $x$, this becomes $(\text{High} \sqcup \cdots) \sqsubseteq \text{Low}$, which fails. The timing side channel is blocked at compile time. \qed
-
-\subsection{Application to API Commands}
-
-For the secure data hosting system, Volpano's guarantees apply to each command:
-
-\textbf{READ Command}: 
-\begin{equation}
-\text{READ}(\text{data} : \tau) \to (\text{output} : \tau)
-\end{equation}
-Type preservation: output type matches data type. No downgrading without declassification.
-
-\textbf{WRITE Command}:
-\begin{equation}
-\text{WRITE}(\text{dest} : \tau_{\text{dest}}, \text{source} : \tau_{\text{src}}) \to \text{void}
-\end{equation}
-Constraint: $\tau_{\text{src}} \sqsubseteq \tau_{\text{dest}}$. Prevents untrusted data from corrupting trusted storage.
-
-\textbf{RUN\_PROGRAM Command}:
-\begin{equation}
-\text{RUN\_PROGRAM}(\text{inputs} : \vec{\tau}, \text{code} : P) \to (\text{output} : \tau_{\text{out}})
-\end{equation}
-Constraint: $P$ type-checks with input types $\vec{\tau}$ and output type $\tau_{\text{out}}$. By Theorem 1, no High input can influence Low output.
-
-\subsection{Type Checking Examples
-
-\subsection{Hospital Application}
-
-\textbf{Scenario}: Process medical images for enhancement and anonymize for research.
-
+\textbf{Security Argument}: Server retrieves label $L = o: R$ associated with data\_id. Access control check: is $\text{caller} \in R$ or $\text{caller} = o$?
 \begin{itemize}
-    \item \textbf{Image Enhancement}: Input (private/High) → Output (private/High). Only owner accesses result.
-    \item \textbf{Anonymization}: Input (private/High) → Output (public/Low) via approved declassifier. Researchers can access anonymized output.
-    \item \textbf{Statistical Analysis}: Aggregate patient measurements → Produce population statistics with differential privacy noise. Output labeled Low.
+\item If check \textit{fails}: return error message (no data leaked, error message is public)
+\item If check \textit{passes}: caller is authorized; release data with its label
 \end{itemize}
 
-In all cases, the Volpano type system ensures that no individual patient data leaks beyond what was explicitly approved via declassification.
+Formal guarantee (Non-Interference): For two executions $E_1, E_2$ where unauthorized caller $c$ (i.e., $c \notin o \cup R$) reads different data\_ids, the responses in both executions are identical errors. Caller's observation (error vs success) is independent of actual data values. $\checkmark$ \textbf{Non-interference for unauthorized parties.}
+
+\subsubsection{ANALYZE\_WHITEBOX(program, inputs, output\_principal)}
+
+\textbf{Security Argument}: Server performs static type-checking of program source code against input labels $L_1, \ldots, L_k$. Type-checker enforces three rules:
+
+\begin{enumerate}
+\item \textbf{Explicit Flow Rule}: For each variable assignment $x := e$, verify $\text{label}(e) \leq \text{label}(x)$. Prevents labeled values flowing to less-restricted variables. By label ordering antisymmetry, no violation of readers constraints.
+
+\item \textbf{Implicit Flow Rule}: Inside conditional if($c$), track program counter label $L_{pc} = \text{label}(c)$. All assignments inside conditional must satisfy $L_{pc} \sqcup \text{label}(e) \leq \text{label}(x)$. This prevents control-flow decisions (which depend on $c$) from being inferred by observer of $x$.
+
+\item \textbf{Declassification Rule}: Any explicit call to declassify($x$, principal, new\_readers) must verify authorizing principal is the owner in $\text{label}(x)$. Declassifications documented in audit log.
+\end{enumerate}
+
+If analysis \textit{succeeds}: all three rules verified; by Theorem 1, program is certified secure. No information flows from inputs to output beyond authorized readers. By label ordering, only authorized observers can see output.
+
+If analysis \textit{fails}: program rejected; no execution. No untrusted code executes. $\checkmark$ \textbf{Type soundness: static analysis certifies program before execution.}
+
+\subsubsection{RUN\_BLACKBOX(binary, inputs)}
+
+\textbf{Security Argument}: For untrusted binaries (source code unavailable), static analysis impossible. Server conservatively labels output as $L_{\text{out}} = L_1 \sqcup L_2 \sqcup \cdots$ (join of all input labels).
+
+Rationale: Label $L_{\text{out}}$ is most permissive label consistent with all inputs. By Lemma 1, any information derivable from inputs remains restricted by $L_{\text{out}}$: only authorized readers (in all $L_i$ reader sets) can access result. Even if binary leaks all input information, leaked output is still protected by $L_{\text{out}}$ reader set.
+
+Conservative labeling ensures: no information leaks beyond most restrictive input. $\checkmark$ \textbf{Label soundness through conservative joining.}
+
+\subsubsection{DECLASSIFY(data\_id, new\_readers, justification, authorizing\_principal)}
+
+\textbf{Security Argument}: Declassification expands reader set: current label $o: R \to o: R'$ where $R' \supseteq R$. Ownership check: is authorizing\_principal = $o$ (owner listed in label)?
+
+\begin{itemize}
+\item If check \textit{fails}: deny declassification; error returned
+\item If check \textit{passes}: expand readers from $R$ to $R'$. Record change: timestamp, principal, justification, digital signature
+\end{itemize}
+
+Formal guarantee: only owner principal can declassify their own data. Reader expansion is monotonic ($R' \supseteq R$); no existing readers removed. No unauthorized principal gains access beyond owner's authorization.
+
+Audit trail enables post-hoc accountability: if breach occurs, trace which principal authorized each declassification, review justifications, audit signatures. $\checkmark$ \textbf{Declassification authorized by owner only, fully auditable.}
+
+\subsection{Comprehensive Example: Multi-Principal Medical Research}
+
+Hospital medical imaging research: Patient data + hospital reference database + analyzer program + researcher statistics.
+
+\textbf{Setup}:
+\begin{itemize}
+\item Patient $P_1$ uploads CT scan labeled $L_P = \text{patient}_1: \{\text{doctor}_1, \text{patient}_1\}$ (only doctor and patient can read)
+\item Hospital maintains reference tumor database labeled $L_H = \text{hospital}: \{\text{hospital}\}$ (only hospital can read)
+\item Analyzer principal (server-side AI system) writes white-box analysis program to extract features from both
+\item Researcher principal computes aggregate statistics for publication
+\end{itemize}
+
+\textbf{Step 1: Type-Checking White-Box Feature Extraction Program}
+
+Program structure:
+\begin{verbatim}
+features = extract_features(ct_scan, reference_db);
+if features.confidence > 0.9:
+    anomaly_found = true;
+anomaly_count += anomaly_found;
+\end{verbatim}
+
+Type-checking:
+\begin{itemize}
+\item Input $\text{ct\_scan}$ has label $L_P = \text{patient}_1: \{\text{doctor}_1\}$
+\item Input $\text{reference\_db}$ has label $L_H = \text{hospital}: \{\text{hospital}\}$
+\item Join: $L_P \sqcup L_H = \text{patient}_1: \{\text{doctor}_1\} \cap \{\text{hospital}\} = \text{patient}_1: \{\}$ (readers empty; most restrictive)
+\item Variable $\text{features}$ assigned label $\text{patient}_1: \{\}$ (inherits join)
+\item Inside if-conditional: $L_{pc} = \text{patient}_1: \{\}$ (program counter tracks condition label)
+\item Assignment $\text{anomaly\_found} := \text{true}$ must satisfy: $L_{pc} \sqcup \text{label}(\text{true}) \leq \text{label}(\text{anomaly\_found})$
+  \begin{itemize}
+  \item $\text{label}(\text{true}) = \text{public}$ (literal has public label)
+  \item $\text{patient}_1: \{\} \sqcup \text{public} = \text{patient}_1: \{\}$ (join most restrictive)
+  \item So $\text{anomaly\_found}$ must have label $\text{patient}_1: \{\}$ (enforced by type checker)
+  \end{itemize}
+\item Assignment $\text{anomaly\_count} += \text{anomaly\_found}$ transfers restrictive label: $\text{anomaly\_count}$ has label $\text{patient}_1: \{\}$
+\end{itemize}
+
+\textbf{Type-checking result}: Program certified. No information from hospital database leaks into $\text{anomaly\_count}$; no patient data observable by unauthorized parties. Output $\text{anomaly\_count}$ has label $\text{patient}_1: \{\}$ (only patient and patient's doctor authorized).
+
+\textbf{Step 2: Patient-Authorized Declassification for Analyzer}
+
+Patient grants analyzer access: DECLASSIFY($\text{anomaly\_count}$, new\_readers=$\{\text{doctor}_1, \text{analyzer}\}$, justification="Enable medical research analysis", authorizing\_principal=$\text{patient}_1$)
+
+Check: authorizing\_principal = $\text{patient}_1$ (matches owner) ✓ Approved
+
+New label: $\text{patient}_1: \{\text{doctor}_1, \text{analyzer}\}$
+
+Audit log entry: [timestamp=2026-04-20 15:04, principal=patient\_1, action=DECLASSIFY, old\_readers={}, new\_readers={doctor\_1, analyzer}, justification="Enable medical research analysis", signature=hash(entry)]
+
+\textbf{Step 3: Analyzer De-identification and Ownership Transfer}
+
+Analyzer runs k-anonymity algorithm (k=5): ensures each quasi-identifier combination appears $\geq 5$ times. Removes direct identifiers (name, MRN). Re-identification risk $\leq 20\%$ per record (literature threshold).
+
+Output: anonymized dataset. Ownership transferred to researcher principal. New label: $L_R = \text{researcher}: \{\text{researcher}, \text{statistician}\}$
+
+Justification: de-identification satisfies k-anonymity formal condition; analyzer (authorized by patient) creates researcher-owned dataset.
+
+\textbf{Step 4: Aggregate Statistics and Public Release}
+
+Researcher computes: mean tumor size, median patient age distribution, count of anomalies. Aggregate statistics by definition non-sensitive (individual values hidden, only aggregates visible).
+
+New label: $\text{aggregate\_stats}: \{\text{public}\}$ (public readable)
+
+Justification: aggregates inherently non-sensitive; no individual data recoverable.
+
+\textbf{Security Guarantee Chain}:
+\begin{enumerate}
+\item Type-checking prevented hospital database leaking into patient-owned output ✓
+\item Patient controlled authorization for analyzer access (explicit declassification) ✓
+\item De-identification (k-anonymity) justified further reader expansion ✓
+\item Aggregate statistics justified public release ✓
+\item Entire chain auditable: all declassifications logged with principals and justifications ✓
+\end{enumerate}
+
+\subsection{Comparison with Black-Box Alternative}
+
+If programs were black-box binaries instead of type-checked source:
+\begin{itemize}
+\item Analyzer binary takes (ct\_scan, reference\_db, parameters) $\to$ output
+\item Output conservatively labeled: $L_{\text{out}} = L_P \sqcup L_H = \text{patient}_1: \{\}$ (most restrictive)
+\item Same result: anomaly count has most restrictive label
+\item But: no formal guarantee that hospital database didn't leak; only conservative labeling by design
+\end{itemize}
+
+Trade-off: Type-checking proves security formally; black-box requires trust in labeling conservative enough. Design choice (section 3) supports both: white-box for provable security, black-box for legacy code support.
+
+\subsection{Security Guarantees Summary}
+
+All API commands maintain four core properties:
+
+\begin{enumerate}
+\item \textbf{Confidentiality}: Information observable only to authorized principals in label reader set. Unauthorized read attempts return error (no data leak).
+
+\item \textbf{Non-Interference}: Unauthorized principals' observations (error responses, labeled outputs) are independent of secret data values. Cannot infer sensitive values from program behavior, output labels, or execution paths (implicit flow control via program counter).
+
+\item \textbf{Type Soundness (White-Box)}: Type-checked programs are formally certified secure before execution. Soundness theorem guarantees explicit and implicit flow constraints satisfied. Type-check pass $\Rightarrow$ no covert channels.
+
+\item \textbf{Declassification Integrity}: Label changes (downgrades/reader expansion) only authorized by owner principals. All changes logged with timestamp, principal, justification, digital signature. Audit trail enables post-hoc accountability and breach investigation.
+\end{enumerate}

@@ -1,0 +1,366 @@
+\appendix
+
+\section{Formal Models and Pseudocode}
+
+This appendix documents formal specifications and pseudocode for key server operations. Each subsection specifies the algorithm's purpose, formal semantics, and role in the overall design.
+
+\subsection{Type-Checking Algorithm for White-Box Programs}
+
+\textbf{Purpose}: Verify that a program respects information flow constraints before execution. Type-checker enforces explicit flow rules (label ordering) and implicit flow rules (program counter tracking through conditionals). If type-checking succeeds, program certified secure; if fails, program rejected and not executed.
+
+\textbf{Formal Specification}:
+
+Algorithm TYPECHECK($P$, $L_{\text{in}}$, $L_{\text{out}}$):
+
+\begin{algorithmic}
+\State Input: Program $P$, input label environment $L_{\text{in}}: \{\text{var} \to \text{label}\}$, expected output label $L_{\text{out}}$
+\State Initialize: variable label environment $\Gamma = L_{\text{in}}$, program counter label $L_{pc} = \text{public}$
+\State Initialize: errors = []
+
+\Function{typecheck\_statement}{$s$}
+  \If{$s$ is assignment $x := e$}
+    \State $L_e \gets$ \Call{typecheck\_expr}{$e$}
+    \State $L_x \gets \Gamma[x]$ \textit{\# Get label for variable $x$}
+    \State $L_{\text{combined}} \gets L_{pc} \sqcup L_e$ \textit{\# Combine with program counter}
+    \If{$\neg (L_{\text{combined}} \leq L_x)$}
+      \State append("EXPLICIT\_FLOW\_VIOLATION: $L_{\text{combined}} \not\leq L_x$" to errors)
+    \EndIf
+    \State $\Gamma[x] \gets L_x$ \textit{\# Update label (unchanged if check passed)}
+  \ElsIf{$s$ is conditional if($c$) $\{ S_{\text{true}} \}$ else $\{ S_{\text{false}} \}$}
+    \State $L_c \gets$ \Call{typecheck\_expr}{$c$}
+    \State $L_{pc}^{\text{old}} \gets L_{pc}$
+    \State $L_{pc} \gets L_{pc}^{\text{old}} \sqcup L_c$ \textit{\# Update pc: join with condition label}
+    \State \Call{typecheck\_statement}{$S_{\text{true}}$}
+    \State \Call{typecheck\_statement}{$S_{\text{false}}$}
+    \State $L_{pc} \gets L_{pc}^{\text{old}}$ \textit{\# Restore pc after branch}
+  \ElsIf{$s$ is call declassify($x$, principal, $R'$)}
+    \State $L_x \gets \Gamma[x]$ \textit{\# Current label of $x$}
+    \State \textit{\# Extract owner from label $L_x = o: R$}
+    \State $o \gets$ \Call{owner}{$L_x$}
+    \If{principal $\neq o$}
+      \State append("DECLASSIFY\_UNAUTHORIZED: principal $\neq$ owner" to errors)
+    \Else
+      \State \textit{\# Owner authorizes declassification}
+      \State $R \gets$ \Call{readers}{$L_x$}
+      \If{$\neg (R \subseteq R')$}
+        \State append("DECLASSIFY\_SHRINKING: $R \not\subseteq R'$" to errors)
+      \Else
+        \State \textit{\# Approved: update label}
+        \State $\Gamma[x] \gets o: R'$
+      \EndIf
+    \EndIf
+  \EndIf
+\EndFunction
+
+\State \textit{\# Typecheck all statements in program}
+\For{each statement $s$ in $P$}
+  \State \Call{typecheck\_statement}{$s$}
+\EndFor
+
+\State \textit{\# Final check: output label matches expected}
+\State $L_{\text{result}} \gets$ \Call{join\_all\_labels}{$\Gamma$} \textit{\# Join all variable labels}
+\If{$\neg (L_{\text{result}} \leq L_{\text{out}})$}
+  \State append("OUTPUT\_LABEL\_MISMATCH: result not $\leq$ expected output" to errors)
+\EndIf
+
+\State Output: (errors == []) $\Rightarrow$ PASS, else FAIL(errors)
+\end{algorithmic}
+
+\textbf{Role in Design}: 
+- Before executing any white-box program, server runs TYPECHECK
+- If PASS: program certified secure, execute
+- If FAIL: reject program, log error, no execution occurs
+- Ensures: no information flows from secret inputs to public outputs without authorization
+
+\textbf{Complexity}: $O(|P|)$ where $|P|$ is program size. Single pass through program statements.
+
+\subsection{Label Join Operation}
+
+\textbf{Purpose}: Compute most restrictive label consistent with multiple labeled data sources. When program reads data from multiple labels, combine labels to get output label. Join enforces: only readers authorized for ALL input labels can access output.
+
+\textbf{Formal Definition}:
+
+For labels $L_1 = \{o_1: R_1\}, L_2 = \{o_2: R_2\}$:
+
+\begin{equation}
+L_1 \sqcup L_2 = \{(o_1: R_1 \cap R_2), (o_2: R_1 \cap R_2)\}
+\end{equation}
+
+\textit{Reader intersection}: Only principals in $R_1 \cap R_2$ (both reader sets) can read joined result.
+
+\textbf{Pseudocode}:
+
+\begin{algorithmic}
+\Function{label\_join}{$L_1$, $L_2$}
+  \State result $\gets \{\}$ \textit{\# New label}
+  \For{each owner $o$ in $\{o_1, o_2\}$}
+    \State $R_1 \gets$ \Call{readers}{$L_1$, $o$}
+    \State $R_2 \gets$ \Call{readers}{$L_2$, $o$}
+    \State $R \gets R_1 \cap R_2$ \textit{\# Intersection}
+    \State add$(o: R)$ to result
+  \EndFor
+  \State return result
+\EndFunction
+
+\Function{label\_join\_multiple}{$L_1, L_2, \ldots, L_k$}
+  \State result $\gets L_1$
+  \For{$i = 2$ to $k$}
+    \State result $\gets$ \Call{label\_join}{result, $L_i$}
+  \EndFor
+  \State return result
+\EndFunction
+\end{algorithmic}
+
+\textbf{Example}:
+\begin{itemize}
+\item $L_1 = \text{patient\_1}: \{\text{doctor\_1}, \text{patient\_1}\}$ (patient data readable by doctor and patient)
+\item $L_2 = \text{hospital}: \{\text{hospital}, \text{analyst}\}$ (hospital database readable by hospital and analyst)
+\item Join: For each owner, intersect readers:
+  \begin{itemize}
+  \item patient\_1 readers: $\{\text{doctor\_1}, \text{patient\_1}\} \cap \{\text{hospital}, \text{analyst}\} = \{\}$ (empty)
+  \item hospital readers: $\{\text{doctor\_1}, \text{patient\_1}\} \cap \{\text{hospital}, \text{analyst}\} = \{\}$ (empty)
+  \end{itemize}
+\item Result: $L_{\text{join}} = \text{patient\_1}: \{\}, \text{hospital}: \{\}$ (nobody can read combined output—most restrictive)
+\end{itemize}
+
+\textbf{Role in Design}:
+- Used in black-box program labeling: output = join of all inputs
+- Used in white-box type-checking: combined labels for expressions using multiple inputs
+- Ensures: most restrictive label applied; security guaranteed by conservatism
+
+\subsection{Label Ordering Partial Order}
+
+\textbf{Purpose}: Define when one label is more restrictive (can safely flow to) another. Label ordering $L_1 \leq L_2$ encodes: if $L_1$ restricts more, then information with $L_1$ can flow to variables expecting $L_2$.
+
+\textbf{Formal Definition}:
+
+\begin{equation}
+L_1 \leq L_2 \text{ iff } \forall o \in \text{principals}, R_1(o) \supseteq R_2(o)
+\end{equation}
+
+Interpretation: $L_1$ more restrictive iff readers in $L_1$ are superset of readers in $L_2$ (fewer readers for same principal).
+
+\textbf{Properties}:
+\begin{itemize}
+\item \textbf{Reflexive}: $L \leq L$ (label ordering itself)
+\item \textbf{Transitive}: If $L_1 \leq L_2$ and $L_2 \leq L_3$, then $L_1 \leq L_3$
+\item \textbf{Antisymmetric}: If $L_1 \leq L_2$ and $L_2 \leq L_1$, then $L_1 = L_2$
+\end{itemize}
+
+Forms a partial order over labels.
+
+\textbf{Pseudocode}:
+
+\begin{algorithmic}
+\Function{label\_leq}{$L_1$, $L_2$}
+  \For{each owner $o$}
+    \State $R_1 \gets$ \Call{readers}{$L_1$, $o$}
+    \State $R_2 \gets$ \Call{readers}{$L_2$, $o$}
+    \If{$\neg (R_1 \supseteq R_2)$}
+      \State return FALSE \textit{\# Readers mismatch; $L_1 \not\leq L_2$}
+    \EndIf
+  \EndFor
+  \State return TRUE \textit{\# All owners satisfy $R_1 \supseteq R_2$}
+\EndFunction
+\end{algorithmic}
+
+\textbf{Example}:
+\begin{itemize}
+\item $L_1 = \text{patient}: \{\}$ (no readers; most restrictive)
+\item $L_2 = \text{patient}: \{\text{doctor}\}$ (doctor can read)
+\item Is $L_1 \leq L_2$? Check: readers in $L_1$ $\supseteq$ readers in $L_2$? $\{\} \supseteq \{\text{doctor}\}$? NO
+\item Result: $L_1 \not\leq L_2$ (restrictive $L_1$ cannot flow to less-restrictive $L_2$—counterintuitive but correct!)
+\item Instead: $L_2 \leq L_1$? Check: $\{\text{doctor}\} \supseteq \{\}$? YES. So less-restrictive $L_2$ can flow to $L_1$.
+\end{itemize}
+
+\textbf{Role in Design}:
+- Type-checker uses label ordering for explicit flow check: assignment $x := e$ requires $\text{label}(e) \leq \text{label}(x)$
+- Ensures: information cannot flow from less-restrictive sources to more-restrictive sinks
+- Counterintuitive direction: less-restrictive $\to$ more-restrictive allowed; more-restrictive $\to$ less-restrictive blocked
+
+\subsection{Hospital Scenario Label Lattice}
+
+\textbf{Purpose}: Document concrete label instantiations for the hospital medical research scenario. Shows how abstract Myers-Liskov framework applies to concrete system with patients, doctors, researchers, analyzers.
+
+\textbf{Principals}:
+\begin{itemize}
+\item $P_1, P_2, \ldots$ (patients)
+\item $D_1, D_2, \ldots$ (treating doctors)
+\item $H$ (hospital institution)
+\item $R_1, R_2, \ldots$ (researchers)
+\item $A_1, A_2, \ldots$ (analyzer AI systems)
+\item $\text{Server}$ (hosting server)
+\item $\text{Public}$ (external observers)
+\end{itemize}
+
+\textbf{Key Labels}:
+
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Data} & \textbf{Label} & \textbf{Interpretation} \\
+\hline
+Patient data & $P_i: \{D_i, P_i\}$ & Only doctor + patient read \\
+\hline
+Hospital DB & $H: \{H\}$ & Only hospital reads \\
+\hline
+Processed data & $A: \{\}$ (after analysis) & Only analyzer sees (most restrictive) \\
+\hline
+Anonymized cohort & $R: \{R, \text{Public}\}$ & Researchers + public after de-id \\
+\hline
+Aggregates & $R: \{\text{Public}\}$ & Public accessible after aggregation \\
+\hline
+\end{tabular}
+
+\textbf{Label Transitions}:
+
+\begin{enumerate}
+\item Upload: $L_0 = P_1: \{D_1, P_1\}$ (patient data)
+\item Declassify for research: $L_1 = P_1: \{D_1, P_1, A\}$ (grant analyzer access)
+\item De-identification: $L_2 = R: \{R, \text{Public}\}$ (ownership transfer to researcher; de-id justifies public readers)
+\item Publication: $L_3 = R: \{\text{Public}\}$ (pure public aggregates)
+\end{enumerate}
+
+\textbf{Role in Design}:
+- Concrete instantiation of abstract framework
+- Shows how to model hospital medical scenario
+- Demonstrates label transitions at each declassification step
+- Provides reference for implementing server
+
+\subsection{Access Control Matrix}
+
+\textbf{Purpose}: Specify which principals can read/write which data based on labels. Access control derived from label definitions, enforced by server READ/WRITE commands.
+
+\textbf{Rules}:
+
+For data with label $L = o: R$ (owner $o$, readers $R$):
+\begin{itemize}
+\item \textbf{Read Access}: Principal $p$ can read iff $p = o$ OR $p \in R$
+\item \textbf{Write Access}: Principal $p$ can write iff $p = o$ (only owner)
+\item \textbf{Declassify}: Principal $p$ can declassify iff $p = o$ (only owner)
+\end{itemize}
+
+\textbf{Pseudocode}:
+
+\begin{algorithmic}
+\Function{can\_read}{principal $p$, label $L$}
+  \State $o \gets$ \Call{owner}{$L$}
+  \State $R \gets$ \Call{readers}{$L$}
+  \State return $(p = o)$ \textbf{or} $(p \in R)$
+\EndFunction
+
+\Function{can\_write}{principal $p$, label $L$}
+  \State $o \gets$ \Call{owner}{$L$}
+  \State return $(p = o)$
+\EndFunction
+
+\Function{can\_declassify}{principal $p$, label $L$}
+  \State return \Call{can\_write}{$p$, $L$} \textit{\# Same as write}
+\EndFunction
+\end{algorithmic}
+
+\textbf{Example}:
+
+For data labeled $P_1: \{D_1\}$ (patient owns, doctor reads):
+\begin{itemize}
+\item Can $P_1$ read? $P_1 = \text{owner}$ ✓ YES
+\item Can $D_1$ read? $D_1 \in \text{readers}$ ✓ YES
+\item Can $D_2$ read? $D_2 \neq \text{owner}$ and $D_2 \notin \text{readers}$ ✗ NO
+\item Can $P_1$ write? $P_1 = \text{owner}$ ✓ YES
+\item Can $D_1$ write? $D_1 \neq \text{owner}$ ✗ NO
+\item Can $P_1$ declassify? $P_1 = \text{owner}$ ✓ YES
+\end{itemize}
+
+\textbf{Role in Design}:
+- Implements server authorization logic
+- Enforced by READ, WRITE, DECLASSIFY commands
+- Ensures only authorized principals access data
+
+\subsection{Audit Trail Schema}
+
+\textbf{Purpose}: Document format for audit logs. Every security-relevant operation (UPLOAD, READ, DECLASSIFY) logged with timestamp, principal, action, parameters, signature. Enables post-hoc breach investigation and accountability.
+
+\textbf{Schema}:
+
+\begin{verbatim}
+audit_entry = {
+  timestamp: ISO8601_datetime,
+  principal: principal_id,
+  action: "UPLOAD" | "READ" | "DECLASSIFY" | "ANALYZE_WHITEBOX" | "RUN_BLACKBOX",
+  data_id: string,
+  old_label: label (if applicable),
+  new_label: label (if applicable),
+  parameters: {
+    (action-specific fields)
+  },
+  justification: string (if DECLASSIFY),
+  result: "SUCCESS" | "FAILURE",
+  error_message: string (if FAILURE),
+  signature: SHA256(entry_without_signature)
+}
+\end{verbatim}
+
+\textbf{Examples}:
+
+\textbf{UPLOAD}:
+\begin{verbatim}
+{
+  timestamp: "2026-04-20T15:04:26Z",
+  principal: "patient_1",
+  action: "UPLOAD",
+  data_id: "P1_CT_SCAN_001",
+  new_label: "patient_1:{doctor_1, patient_1}",
+  result: "SUCCESS"
+}
+\end{verbatim}
+
+\textbf{DECLASSIFY}:
+\begin{verbatim}
+{
+  timestamp: "2026-04-20T15:05:00Z",
+  principal: "patient_1",
+  action: "DECLASSIFY",
+  data_id: "P1_CT_SCAN_001",
+  old_label: "patient_1:{doctor_1, patient_1}",
+  new_label: "patient_1:{doctor_1, patient_1, analyzer}",
+  justification: "Authorize medical AI analysis for cancer research",
+  result: "SUCCESS"
+}
+\end{verbatim}
+
+\textbf{Role in Design}:
+- Complete record of all security operations
+- Timestamp enables ordering
+- Principal + signature enable accountability (audit entry signed by principal's key)
+- Justification required for declassification (business decision documentation)
+- Error messages for failed operations help debugging
+
+\subsection{Design Pattern: Label Polymorphism}
+
+\textbf{Purpose}: Show how labels vary at different program points. Single variable can have different labels in different contexts. Enables fine-grained information flow analysis.
+
+\textbf{Pattern}:
+
+In white-box program:
+\begin{verbatim}
+x = read_file_1();         // x has label L1 (from file_1)
+y = read_file_2();         // y has label L2 (from file_2)
+z = x + y;                 // z has label L1 ⊔ L2 (join of both)
+if (z > threshold) {       // program counter label = L1 ⊔ L2
+  result = true;           // result constrained by (L1 ⊔ L2)
+}
+\end{verbatim}
+
+Type-checking tracks:
+\begin{itemize}
+\item \textit{Entry}: $x: L_1$, $y: L_2$
+\item \textit{After $z = x + y$}: $z: L_1 \sqcup L_2$
+\item \textit{Inside if}: $L_{pc} = L_1 \sqcup L_2$
+\item \textit{Assignment $\text{result} = \text{true}$}: $L_{pc} \sqcup \text{label}(\text{true}) = L_1 \sqcup L_2 \sqcup \text{public} = L_1 \sqcup L_2 \leq \text{label}(\text{result})$
+\end{itemize}
+
+\textbf{Role in Design}:
+- Shows how implicit flow control prevents information leaks through conditionals
+- Label annotations on variables must be conservative (least restrictive possible)
+- Type-checker proves: if annotations satisfy rules, program secure
+
+\end{document}

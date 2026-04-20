@@ -1,19 +1,31 @@
-\section{System Design and Security Goals}
+\section{System Participants and Security Goals}
 
-\subsection{System Model}
+\subsection{Principals and Roles}
 
-\textbf{Participants}: Hosting server (trusted), data owners (users), authorized users (friends), and untrusted programs.
+Hospital system involves multiple principals with independent authority:
 
-\textbf{Data labels}: Each object carries a confidentiality label:
-\begin{itemize}
-    \item \texttt{private}: Type High (owner only)
-    \item \texttt{friends}: Type Medium (owner + designated friends)  
-    \item \texttt{public}: Type Low (all authenticated users)
-\end{itemize}
+\textbf{Patients} ($p_i$): Own medical records. Can authorize access by doctors, consent to research, declassify data for approved uses.
+
+\textbf{Doctors} ($d_j$): Treat patients with patient authorization. Can read patient records, execute analysis programs, access results.
+
+\textbf{Hospital} ($h$): Trusted storage infrastructure. Manages access enforcement, program execution, audit trails.
+
+\textbf{Researchers} ($r$): External parties receiving declassified, de-identified data for medical studies.
+
+\textbf{Analyzer} ($a$): Trusted program executor performing analysis (image processing, de-identification, statistical aggregation) on behalf of doctors/researchers.
+
+\textbf{Server} (trusted): Enforces label-based access control and static analysis.
+
+\subsection{Decentralized Labels}
+
+Each data object carries label $L = \{o_1: R_1, \ldots, o_k: R_k\}$. Format: principal $o_i$ owns data, readers $R_i$ authorized. Example: $\text{patient}_1: \{\text{doctor}_1, \text{patient}_1\}$ means patient 1 owns; only doctor 1 and patient 1 can read.
+
+Multiple owners can exist. When combining data from sources with different owners, readers are restricted to intersection (least privilege).
 
 \subsection{Security Goals}
 
-\textbf{Confidentiality}: Type system enforces High $\not\to$ Low. Even if a program is malicious, High-labeled data cannot influence outputs visible to Low-clearance users. This prevents both explicit leaks (direct assignments) and implicit leaks (information released through control flow).
+\textbf{Confidentiality}: Information labeled with owner $o$ and readers $R$ observable only to principals in $\{o\} \cup R$. All other principals learn nothing about data values.
 
-\textbf{Integrity}: Dual property: Low (untrusted) data cannot modify High (trusted) storage. In practice, write authorization is checked via integrity labels and enforced through type constraints.
+\textbf{Integrity}: Data with integrity label writable only by authorized writers. Untrusted programs cannot corrupt trusted storage.
 
+\textbf{Non-Interference}: For any principal $p$ and any two executions differing only in data not involving $p$, $p$'s observable outputs identical. Formal security property: secret data changes don't affect public outputs.
