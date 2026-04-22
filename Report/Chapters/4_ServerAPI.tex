@@ -17,81 +17,17 @@ For each command, response is either success value or \texttt{error(code,msg)}.
 
 \subsection{Command List}
 
-\textbf{1) UPLOAD}$(token, payload:bytes, C:ConfLabel, I:IntegLabel, meta)$
+\textbf{1) UPLOAD}$(token, payload, C, I, meta)$: Creates object with label $(C,I)$. Preconditions: valid token, valid labels, caller in $\mathcal{A}$. Response: \texttt{ok(dataId)}. Security: validates label syntax (I1 preserved).
 
-Uploads a new data object to the server with caller-provided labels and metadata.
+\textbf{2) READ\_DATA}$(token, dataId)$: Returns payload if caller in all reader sets of $C$. Security: read checks prevent unauthorized access (I2 preserved).
 
-\begin{itemize}
-    \item \textbf{Preconditions}: token must be valid and authenticated; $C$ and $I$ must be syntactically valid labels (all owner names in $\mathcal{A}$, no duplicate policies for same owner); caller must be in $\mathcal{A}$.
-    \item \textbf{Effect}: create persistent object with unique server-assigned $dataId$; store tuple $(payload, (C,I), owner, timestamp, version)$; owner is the authenticated principal who called UPLOAD.
-    \item \textbf{Response}: \texttt{ok(dataId)} on success; \texttt{error(invalid\_label,msg)} if labels are malformed.
-    \item \textbf{Security}. UPLOAD preserves invariant I1 (label validity) because the server validates syntax. The owner field is set to the uploader, establishing accountability.
-\end{itemize}
+\textbf{3) WRITE\_DATA}$(token, dataId, payload')$: Updates payload if caller in all writer sets of $I$ and $I \sqsubseteq I'$. Security: write checks prevent untrusted modifications (I3 preserved).
 
-\textbf{2) READ\_DATA}$(token, dataId)$
+\textbf{4) UPLOAD\_PROGRAM}$(token, src, signature)$: Parses, type-checks, and flow-checks source code. Stores checked IR with inferred interface. Response: \texttt{ok(programId, interface)} or \texttt{error(type/flow\_violation)}. Security: rejects unsafe code before storage (I4 preserved).
 
-Retrieves a stored data object if the caller is authorized.
+\textbf{5) RUN\_PROGRAM}$(token, programId, inputIds, outC, outI)$: Executes program if (1) caller authorized for inputs, (2) computed $L_{req} = L_1 \sqcup \cdots \sqcup L_n \sqsubseteq (outC, outI)$. Security: ensures output label contains all input information (I4 preserved).
 
-\begin{itemize}
-    \item \textbf{Preconditions}: token valid; $dataId$ must identify a stored object.
-    \item \textbf{Checks}: for each policy $(o:r) \in C$ of the object's confidentiality label, verify that the authenticated caller is in $r$. If any policy denies access, abort.
-    \item \textbf{Effect}: no state change.
-    \item \textbf{Response}: \texttt{ok(payload,label,meta)} if checks pass; \texttt{error(access\_denied)} if caller not authorized.
-    \item \textbf{Security}. READ\_DATA preserves I2 (read safety) by checking confidentiality before returning data. No unauthorized reader can obtain the plaintext.
-\end{itemize}
-
-\textbf{3) WRITE\_DATA}$(token, dataId, payload')$
-
-Modifies the payload of an existing object if the caller is authorized.
-
-\begin{itemize}
-    \item \textbf{Preconditions}: token valid; $dataId$ exists; $payload'$ is well-formed.
-    \item \textbf{Checks}: for each integrity policy $(o \leftarrow w) \in I$ of the object's integrity label, verify caller is in $w$. Additionally, the new label $(C', I')$ (which may equal the original) must be compatible: $I \sqsubseteq I'$ (integrity cannot be weakened by a write).
-    \item \textbf{Effect}: replace payload, store new version, update timestamp.
-    \item \textbf{Response}: \texttt{ok(version)} on success; \texttt{error(access\_denied)} or \texttt{error(integrity\_violation)} on failure.
-    \item \textbf{Security}. WRITE\_DATA preserves I3 (write safety) by verifying that only trusted writers can modify each owner's data.
-\end{itemize}
-
-\textbf{4) UPLOAD\_PROGRAM}$(token, src, signature)$
-
-Uploads user source code for information-flow checking.
-
-\begin{itemize}
-    \item \textbf{Preconditions}: token valid; $src$ is syntactically valid program source; $signature$ is the caller's identifying string (used in audit logs).
-    \item \textbf{Checks}: parser validates syntax; type checker verifies that every variable is either explicitly labeled or has an inferable label (e.g., from context or data flow); flow checker validates all assignments and conditionals against the flow order $\sqsubseteq$ (see Chapter 3); reject if any check fails.
-    \item \textbf{Effect}: if checks pass, store typed intermediate representation (IR) with interface specification (input labels, output label); assign server-generated $programId$.
-    \item \textbf{Response}: \texttt{ok(programId, inferredInterface)} if checks pass; \texttt{error(type\_error,msg)} or \texttt{error(flow\_violation,msg)} if any check fails.
-    \item \textbf{Security}. UPLOAD\_PROGRAM preserves I4 (program safety) because unsafe source code is rejected and never stored. No unsafe program can execute.
-\end{itemize}
-
-\textbf{5) RUN\_PROGRAM}$(token, programId, inputIds, outC:ConfLabel, outI:IntegLabel)$
-
-Executes a previously uploaded program on supplied data.
-
-\begin{enumerate}
-    \item \textbf{Preconditions}: token valid; $programId$ identifies a stored and type-checked program; $inputIds$ refer to stored data objects; caller is authorized to read all input objects; $outC$ and $outI$ are valid labels.
-    \item Resolve input labels $L_1, \ldots, L_n$ from stored objects corresponding to $inputIds$.
-    \item Compute required output label lower bound $L_{req} = L_1 \sqcup \cdots \sqcup L_n$ (the least upper bound in the flow order).
-    \item Verify: $L_{req} \sqsubseteq (outC, outI)$. If not, reject and return error.
-    \item \textbf{Effect}: if checks pass, execute the program (in an isolated sandbox or under runtime monitoring); store output with label $(outC, outI)$ and server-assigned $resultDataId$.
-    \item \textbf{Response}: \texttt{ok(resultDataId)} on success; \texttt{error(flow\_violation,msg)} if $L_{req} \not\sqsubseteq (outC, outI)$.
-    \item \textbf{Security}. RUN\_PROGRAM preserves I4 because the program is executed only after its checked interface is confirmed to be compatible with the input and output labels. The check $L_{req} \sqsubseteq (outC, outI)$ ensures that the output label is high enough to safely hold the combined information from all inputs.
-\end{enumerate}
-
-\textbf{6) DECLASSIFY\_AND\_RELEASE}$(token, dataId, transform, params, targetC)$
-
-Applies a trusted declassification transform and releases data under a new label.
-
-\begin{itemize}
-    \item \textbf{Preconditions}: token valid; $dataId$ identifies an object with source label $(C, I)$; $transform$ is in a server-trusted whitelist (e.g., ``redact'', ``anonymize'', ``k-anon'', ``dp''); $params$ are parameters for the transform; $targetC$ is a candidate target confidentiality label.
-    \item \textbf{Checks}: 
-        \begin{enumerate}
-            \item $transform$ is approved and has a defined policy.
-            \item $params$ satisfy policy constraints (e.g., $k \geq k_{min}$ for $k$-anonymity).
-            \item For each confidentiality policy $(o:r) \in C$, there is a corresponding policy $(o:r') \in targetC$ with $r \supseteq r'$ (relaxation only, no tightening). For each owner $o$ where $(o:r) \in C$ and $(o:r') \in targetC$ with $r \supset r'$, the caller must have authority from owner $o$.
-        \end{enumerate}
-    \item \textbf{Effect}: if checks pass, run the transform function on the payload; create new object with payload $payload'$, label $(targetC, I')$ (where $I'$ may be tightened by the transform policy); assign server $resultDataId$; write audit entry $(actor, time, dataId, targetC, transform, params, authority\_proof)$.
-    \item \textbf{Response}: \texttt{ok(releasedDataId)} on success; \texttt{error(insufficient\_authority,msg)}, \texttt{error(policy\_violation,msg)}, or \texttt{error(transform\_failed,msg)} on failure.
+\textbf{6) DECLASSIFY\_AND\_RELEASE}$(token, dataId, transform, params, targetC)$: Applies approved transform if (1) transform whitelisted, (2) params satisfy policy (e.g., $k \geq k_{min}$), (3) for relaxed policies $(o:r) \to (o:r')$, caller has authority from owner $o$. Stores result with label $(targetC, I')$ and audit entry. Security: authority-checked declassification (I5 preserved).
     \item \textbf{Security}. DECLASSIFY\_AND\_RELEASE preserves I5 (declassification safety) because no policy is relaxed without authority, and every relaxation is logged.
 \end{itemize}
 
@@ -121,4 +57,4 @@ The interface intentionally separates concerns, and each separation reinforces s
     \item \textbf{Audit command (AUDIT\_QUERY)}. This provides the evidence trail to verify that all declassifications were authorized and that no illegal flows occurred. Owners can audit their own data's history, and administrators can audit system-wide activity.
 \end{itemize}
 
-By separating data access, program safety, policy relaxation, and accountability into distinct commands with distinct checks, we avoid the risk of checks interfering with each other or being bypassed by creative command combinations. Each command is responsible for a single security property, and the properties compose to form the overall system security.
+By separating command concerns (data access, program safety, declassification, audit), we prevent checks from interfering and ensure each property composes.

@@ -14,18 +14,7 @@ This avoids unverifiable corner cases from arbitrary black-box user code.
 
 \subsection{Why a Decentralized Label Model}
 
-Healthcare data inherently has multiple owners with different interests. A patient, their doctor, the hospital, and a researcher may all have legitimate claims on a medical record. A centralized lattice model (like the Bell-LaPadula or Biba models) would require all security decisions to funnel through a single authority—either a security officer or the system itself as a ``take it or leave it'' policy.
-
-Decentralized labels solve this by allowing each stakeholder to impose their own constraints independently. For example, consider medical image data:
-\begin{itemize}
-    \item The patient may declare: ``only my doctor can access this.'' That is, $(patient:\{doctor\})$.
-    \item The hospital administration may declare: ``the hospital and my authorized radiologists can see it.'' That is, $(hospital:\{hospital,radiologist\})$.
-    \item A regulatory requirement may declare: ``only the hospital can process it.'' That is, $(regulator:\{hospital\})$.
-\end{itemize}
-
-Under a centralized model, these three requirements would conflict unless merged into a single policy by a global authority. Under the decentralized model, they all apply simultaneously: a reader must be in all three reader sets. This is both more expressive (each stakeholder is heard) and more compositional (adding a new owner's constraint requires no renegotiation).
-
-At the technical level, decentralization enables the system to evolve naturally: new policies can be added by new stakeholders without changing the system architecture or existing policies. This is essential for long-lived medical data that may be shared with new collaborators or subject to new regulations over time.
+Multiple healthcare stakeholders have different security interests: patients, doctors, hospitals, researchers, and regulators. Decentralized labels allow each owner to impose independent constraints without requiring global authority coordination. For example, patient data might have labels $(patient:\{doctor\})$ (patient's read policy), $(hospital:\{hospital,researcher\})$ (hospital's policy), and $(regulator:\{hospital\})$ (regulatory policy). A reader must satisfy all three. This is more expressive and compositional than centralized approaches.
 
 \subsection{Flow Order and Program Rules}
 
@@ -67,29 +56,11 @@ The assignment is rejected at check time, preventing the leak.
 
 \subsection{Why White-Box Programs}
 
-Users upload source code plus declared argument labels. The server performs static checking before execution. This design choice is justified on three grounds:
+Source code analysis enables sound static flow checking before execution (black-box code cannot be reliably analyzed). Pre-execution rejection is stronger than runtime monitoring. Source checking enables compositional security: the server independently verifies program safety regardless of the author's trustworthiness.
 
-\textbf{Soundness of Analysis.} Black-box code (bytecode, binary, or even intermediate language without source) cannot be reliably analyzed for information flows. An attacker could hide a leak in compiler-generated code (e.g., a covert timing channel in assembly). Requiring source code allows the server to apply formal type-checking rules and reject unsafe code with mathematical certainty before it runs.
+\subsection{Declassification Design}
 
-\textbf{Pre-execution Rejection.} Monitoring flows at runtime or terminating execution after a leak is detected is weaker than preventing the leak before it can occur. Pre-execution checking follows the ``fail-safe'' principle: unsafe code never executes, so there is no window of vulnerability.
-
-\textbf{Compositionality with API-Level Checks.} If programs were opaque, the server would have to trust the caller's assertions about what data the program uses and produces. With source code and flow checking, the server can independently verify interface contracts. This enables compositional security: the server can trust its decision to run a program because it has mathematically verified the program's safety independently of who wrote it or what they claim it does.
-
-In practical terms, this means hospital systems could allow researchers to upload analysis code that operates on sensitive datasets without risking unintended leaks, because the server provably enforces the information-flow constraints baked into the code.
-
-\subsection{Declassification Design Choice}
-
-Declassification is only allowed in trusted server transformations, not in arbitrary user code. This centralizes all confidentiality relaxation, making it auditable and enforcing a clear policy boundary. Each declassification requires:
-\begin{itemize}
-    \item \textbf{explicit target policy}: the caller must specify exactly which reader set is being added to each owner's policy,
-    \item \textbf{authority proof} that caller has required authority for each relaxed owner policy: only the owner (or a principal delegated by the owner) can authorize widening the reader set,
-    \item \textbf{transform-specific constraints}: different declassification mechanisms have different preconditions (minimum cohort size for anonymization, privacy budget for differential privacy, etc.),
-    \item \textbf{immutable audit logging}: every declassification creates an audit entry recording who performed it, when, on which data, and which policy was relaxed.
-\end{itemize}
-
-This follows the Myers-Liskov principle that confidentiality relaxation must be explicit, authority-controlled, and traceable. No ``silent'' declassification is allowed.
-
-\textbf{Why Not Allow User Code to Declassify?} Giving user programs access to declassification would require trusting that each program's authors are honest and competent. Even well-intentioned authors might make errors (e.g., declassifying to the wrong reader set, or omitting proper authorization checks). By restricting declassification to the server's trusted functions, we make policy enforcement independent of programmer discipline.
+Declassification only via trusted server transformations (not user code) ensures explicit target policies, authority proof from owners, transform-specific constraints, and immutable audit logs. This centralizes policy enforcement and prevents user programs from bypassing controls.
 
 \subsection{Attack-Driven Justification}
 

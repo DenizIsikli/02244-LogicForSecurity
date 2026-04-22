@@ -11,36 +11,13 @@ The service supports three capabilities:
 
 The core challenge is to support useful computation and controlled sharing without illegal flows. We therefore use decentralized labels with explicit owners, readers, and writers, and we model declassification using the authority mechanism required by Myers-Liskov.
 
-\subsection{Evaluation Scope and Method}
+\subsection{Evaluation Scope}
 
-The security argument is structured in three layers:
-\begin{enumerate}
-    \item \textbf{Model layer}: actors, trust assumptions, attacker model, and secure-channel assumptions.
-    \item \textbf{Design layer}: API and program model choices justified against target security goals.
-    \item \textbf{Verification layer}: per-command flow arguments and declassification justification.
-\end{enumerate}
+Three-layer security argument: model layer (actors, trust, attacker), design layer (API choices), verification layer (per-command preservation). Structure prioritizes precise justification over feature breadth.
 
-This structure follows the project priority that a smaller but precisely justified design is better than broad but superficial feature coverage.
+\subsection{Decentralized Labels}
 
-\subsection{Decentralized Labels and Confidentiality in Multi-Owner Settings}
-
-In a collaborative medical environment, a single record can be constrained by multiple owners and policies simultaneously. To model this precisely, we use decentralized labels where each owner independently states their access constraints.
-
-For confidentiality, we use policies of the form $o:r$, where owner $o$ declares a reader set $r \subseteq \mathcal{A}$. This policy means ``only principals in $r$ are permitted to read data that this owner controls.'' For example, in a hospital setting:
-\begin{itemize}
-    \item A patient may state their data is readable only by themselves: $(patient:\{patient\})$
-    \item A hospital administrator may add that only the hospital staff and approved researchers can read: $(hospital:\{hospital,researcher\})$
-    \item A treatment physician may add another constraint: $(doctor:\{doctor,hospital\})$
-\end{itemize}
-
-When all three policies apply to the same record, the effective confidentiality is the conjunction of all three: $(patient:\{patient\}) \wedge (hospital:\{hospital,researcher\}) \wedge (doctor:\{doctor,hospital\})$. This means a principal is allowed to read only if they are in all three reader sets.
-
-For integrity, we use policies of the form $o \leftarrow w$, where owner $o$ declares a writer set $w \subseteq \mathcal{A}$. This states ``only principals in $w$ are trusted to modify data that this owner is responsible for.'' Similarly, integrity constraints from multiple owners conjoin to form a comprehensive integrity label.
-
-A full security label is a pair:
-\[
-L = (C, I)
-\]
+Multiple healthcare stakeholders impose independent policies. Decentralized labels allow patient $o_1$, hospital $o_2$, doctor $o_3$ to each declare reader/writer sets. Effective policy is conjunction: reader must satisfy all policies. Integrity similarly: owner $o$ declares trusted writers. Full label is $(C, I)$ pair.
 where $C = \bigwedge_i (o_i:r_i)$ is a conjunction of confidentiality policies and $I = \bigwedge_j (o_j \leftarrow w_j)$ is a conjunction of integrity policies.
 
 The decentralized model is essential because different stakeholders (patients, doctors, hospitals, researchers) have legitimate but conflicting policy requirements. A centralized authority cannot fairly adjudicate all interests, but allowing each owner to declare their own constraints respects the autonomy that is ethically necessary in healthcare. At the technical level, this decentralization makes the model compositional: adding a new owner's policy to a label simply adds one more conjunct, and the flow rules handle the resulting complexity uniformly.

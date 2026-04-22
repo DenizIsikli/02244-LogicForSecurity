@@ -103,62 +103,17 @@ Mitigations are policy-coupled:
   \item cumulative budget tracking and cutoff enforce bounded repeated leakage.
 \end{itemize}
 
-\subsection{Compositional Risk Statement}
-
-If outputs $O_1,\ldots,O_n$ are released under approved declassification steps, risk composes across releases. Therefore privacy budgets and audit trails are maintained per dataset and per requester, not per request in isolation.
-
-This is the practical bridge between theory and operation: each release is checked locally, while cumulative risk is controlled globally.
-
 \subsection{Hospital Scenario Example: Multi-Step Privacy Pipeline}
 
-Consider a hospital storing patient data with labels:
-\[
-L_{\text{clinical}} = (patient:\{hospital,doctor\}) \wedge (hospital:\{hospital\})
-\]
-
-A researcher requests access to a dataset for a retrospective study on treatment outcomes. The hospital initiates a controlled declassification pipeline:
+Consider patient data with label $L_{\text{clinical}} = (patient:\{hospital,doctor\}) \wedge (hospital:\{hospital\})$. For research access, the hospital applies:
 
 \begin{enumerate}
-  \item \textbf{Ingest Phase.} The raw patient dataset is stored with label $L_{\text{clinical}}$. Only hospital staff and treating doctors can read.
-  
-  \item \textbf{Redaction Phase.} The server applies a trusted redaction transform: removes name, SSN, MRN, exact birth date. Keeps age (binned to 5-year intervals), gender, zip code, treatment codes, and outcomes.
-  
-  \item \textbf{Aggregation Phase.} Instead of releasing individual records, the server computes group statistics: ``Count of patients by age group, gender, and treatment, with mean outcome measure.'' Individual records are not released; only the aggregates are.
-  
-  \item \textbf{$k$-Anonymity Check.} The server verifies that for any combination of (age-group, gender, zip-code) appearing in the aggregates, at least $k = 5$ patients in the original dataset have that combination. If not, further generalization (e.g., remove zip code, group gender coarsely) is applied.
-  
-  \item \textbf{Authority Verification.} The hospital administrator (acting on the patient's authorization) verifies that the researcher is approved and the study has ethics approval. The researcher must have authority to relax the $(hospital:\{hospital\})$ policy to $(hospital:\{hospital,researcher\})$.
-  
-  \item \textbf{Parameter Enforcement.} The server checks: 
-    \begin{itemize}
-        \item $k \geq 5$ (satisfied by step 4),
-        \item $\epsilon \leq 0.5$ if differential privacy is applied (e.g., for query systems), or $\epsilon = \infty$ if only aggregates are released (no DP needed for fixed aggregates),
-        \item dataset version and timestamp recorded for audit trail.
-    \end{itemize}
-  
-  \item \textbf{Release.} The server creates a new object with aggregated data and label:
-  \[
-  L_{\text{research}} = (patient:\{hospital,doctor,researcher\}) \wedge (hospital:\{hospital,researcher\})
-  \]
-  
-  \item \textbf{Audit Logging.} An entry is recorded:
-  \[
-  (actor: \text{admin}, time: 2024\text{-}04\text{-}22, source\_dataId: 12345, target\_dataId: 12346, source\_label: L_{\text{clinical}}, target\_label: L_{\text{research}}, transform: \text{``redact+aggregate+k\text{-}anon''}, params: \{k=5\}, authority\_proof: \text{``ethics\_approval\_123''})
-  \]
+  \item \textbf{Redaction:} Remove direct identifiers (name, SSN, MRN).
+  \item \textbf{Aggregation:} Release group statistics instead of individual records.
+  \item \textbf{$k$-Anonymity:} Verify quasi-identifier combinations appear in at least $k = 5$ records.
+  \item \textbf{Authority Check:} Administrator confirms researcher authorization and ethics approval.
+  \item \textbf{Release and Audit:} Create output with label $L_{\text{research}} = (patient:\{hospital,doctor,researcher\}) \wedge (hospital:\{hospital,researcher\})$.
 \end{enumerate}
 
-\textbf{Why This Is Acceptable.} Each step addresses a specific attack vector:
-\begin{itemize}
-    \item Redaction removes direct identifiers, raising the bar for linkage attacks.
-    \item Aggregation hides individuals in groups, preventing record-level leakage.
-    \item $k$-Anonymity ensures that even if an attacker links to external data, the candidate set is at least $k$ individuals, providing formal privacy bound $1/k$.
-    \item Authority verification ensures that only the patient (or their delegate) can authorize the release.
-    \item Audit logging allows retroactive verification: if a researcher misuses the data, the hospital can prove who approved the release and under what constraints.
-\end{itemize}
-
-No single step is sufficient (e.g., $k$-anonymity alone is not enough given background knowledge). But the combination is defensible: it combines theoretical privacy (formal $k$-anonymity guarantee) with practical safeguards (authority, audit, parameter enforcement).
-
-\subsection{Residual Risks}
-
-Even with policy-compliant declassification, residual risk remains from background knowledge and future auxiliary datasets. We therefore claim \emph{risk reduction with bounded leakage}, not absolute anonymity. This conservative claim aligns with both the theory and real-world data release practice.
+This pipeline combines redaction (reduces linkage surface), aggregation (hides individuals), $k$-anonymity (formal privacy bound $1/k$), authority verification (only authorized release), and audit (retroactive accountability).
 
