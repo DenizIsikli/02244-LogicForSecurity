@@ -1,21 +1,51 @@
 \section{Introduction}
 
-This report analyzes a data hosting server using the \textbf{Volpano type system method} for secure information flow. The system supports three features: user-controlled security labeling, policy-based data sharing, and untrusted program execution. We provide formal guarantees that confidential data cannot leak to unauthorized users through either explicit assignments or implicit control-flow channels.
+This report presents the design and analysis of a secure data-hosting service for medical information. Our goal is not only to describe implementation steps, but to justify \emph{why} each design decision is security-relevant under the course model.
 
-\subsection{System Overview}
-
-The server hosts medical data (hospital scenario) with three confidentiality levels: \texttt{private} (High, owner-only), \texttt{friends} (Medium, designated friends), and \texttt{public} (Low, all users). Users can execute programs on data, but these programs are untrusted. The Volpano method ensures that even malicious programs cannot violate information flow policies through static type checking performed before execution.
-
-\subsection{Volpano Type System Method}
-
-The Volpano approach provides a \textbf{sound type system} for enforcing secure information flow:
-
+The service supports three capabilities:
 \begin{itemize}
-    \item \textbf{Type ordering}: Low $\sqsubseteq$ Medium $\sqsubseteq$ High, where High represents confidential data.
-    \item \textbf{Type rules}: Enforce that High information cannot flow to Low outputs (explicit leaks) and control dependencies don't leak information (implicit flows via program counter).
-    \item \textbf{Soundness}: Type checking guarantees no unauthorized information flows.
-    \item \textbf{Static verification}: Security is checked at design time, eliminating runtime overhead.
+    \item user-controlled confidentiality labels,
+    \item policy-based sharing (owner, friends, public),
+    \item execution of untrusted analysis programs.
 \end{itemize}
 
-\textbf{Key distinction from Denning's approach}: Volpano uses type inference to automatically determine security types, whereas Denning's label-based method requires manual label assignment and constraint solving.
+The core challenge is to allow useful computation without allowing confidential data to leak. We address this with a Volpano-style information-flow type system and a precise set of assumptions about attacker power and communication channels.
+
+\subsection{Evaluation Scope and Method}
+
+The report argues security in three layers:
+\begin{enumerate}
+    \item \textbf{Model layer}: explicit assumptions (attacker, trust boundaries, channel guarantees).
+    \item \textbf{Design layer}: each protocol/API decision is connected to a target property.
+    \item \textbf{Verification layer}: formal typing arguments and attack-case analysis, not only tool output.
+\end{enumerate}
+
+This structure is intentional: completeness of features is not enough for a strong grade if the security argument is implicit. We therefore make every claim traceable to assumptions, rules, and consequences.
+
+\subsection{Security Lattice and Informal Intuition}
+
+We use confidentiality levels:
+\[
+\textbf{Low} \sqsubseteq \textbf{Medium} \sqsubseteq \textbf{High}
+\]
+
+Mapped to the domain:
+\begin{itemize}
+    \item \texttt{public} $\leftrightarrow$ Low,
+    \item \texttt{friends} $\leftrightarrow$ Medium,
+    \item \texttt{private} $\leftrightarrow$ High.
+\end{itemize}
+
+Intuitively, information may flow upward in the lattice (e.g., public into private processing), but never downward unless an explicit and trusted declassification step is invoked.
+
+\subsection{Why Volpano for This Project}
+
+The Volpano method is appropriate because the system executes untrusted code. If checks were only dynamic, leakage might occur before detection. Static typing gives a stronger pre-execution guarantee:
+\begin{itemize}
+    \item explicit flows are blocked by assignment constraints,
+    \item implicit flows are blocked through program-counter tracking,
+    \item rejection happens before execution, so unsafe programs never run.
+\end{itemize}
+
+This aligns with the project requirement to reason from theory to system behavior, rather than relying only on empirical testing.
 

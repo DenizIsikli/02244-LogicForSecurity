@@ -1,171 +1,90 @@
-\section{Security Analysis and Formal Verification}
+\section{Security Analysis of API Commands}
 
-\subsection{Type Inference and Checking Semantics}
+\subsection{From Local Rules to System Guarantees}
 
-The Volpano type system operates on three core principles: (1) explicit flow analysis, (2) implicit flow tracking via program counter, and (3) soundness verification.
-
-\textbf{Definition (Type Assignment)}: Given a program $P$ with variables $\{x_1, \ldots, x_n\}$ and input types $\vec{\tau}_{\text{in}} = (\tau_1, \ldots, \tau_k)$, a type assignment $\Gamma$ maps each variable to a security type: $\Gamma: \text{Var} \to \{\text{Low}, \text{Medium}, \text{High}\}$.
-
-\textbf{Definition (Program Counter Level)}: For control structures, the program counter $pc$ tracks the maximum security level of conditions that affect a statement:
-\begin{equation}
-pc := \max\{\text{types of conditions in active scopes}\}
-\end{equation}
-
-\textbf{Type Checking Rule (Assignment)}: An assignment $x := e$ type-checks if and only if:
-\begin{equation}
-\text{type}(e) \sqcup pc \sqsubseteq \text{type}(x)
-\end{equation}
-
-This ensures that both data flows (via $e$) and control flows (via $pc$) respect the security level of the target variable.
-
-\textbf{Definition (Explicit Flow)}: Data dependency where value of variable $y$ directly affects variable $x$ through assignment. Example: $x := y$. Type constraint: $\text{type}(y) \sqsubseteq \text{type}(x)$.
-
-\textbf{Definition (Implicit Flow)}: Control dependency where the execution path depends on secret information, potentially revealing the secret through timing or observable effects. Example: 
-\begin{verbatim}
-if (secret > 0) then
-  public_var := 1
-\end{verbatim}
-Type constraint: $\text{type}(secret) \sqcup \text{type}(1) \sqsubseteq \text{type}(public\_var)$.
-
-\subsection{Formal Security Guarantees}
-
-\textbf{Theorem 1 (Confidentiality Soundness)}: If a program $P$ type-checks successfully in the Volpano system with input types $\vec{\tau}_{\text{in}}$ and output type $\tau_{\text{out}}$, then for any execution of $P$:
-\begin{equation}
-\forall i \in [1, k]: \tau_i \sqsubseteq \tau_{\text{out}} \text{ or } x_i \text{ is not used in } P
-\end{equation}
-
-\textbf{Proof Sketch}: The type system enforces two invariants:
-\begin{enumerate}
-    \item \textbf{Explicit Flow Invariant}: Every assignment $x := e$ satisfies $\text{type}(e) \sqsubseteq \text{type}(x)$. By transitivity, if input $i$ flows to $e$, then $\tau_i \sqsubseteq \text{type}(x)$.
-    \item \textbf{Implicit Flow Invariant}: Inside an if-statement with condition $c: \text{type}(c)$, every assignment $x := e$ satisfies $\text{type}(c) \sqcup \text{type}(e) \sqsubseteq \text{type}(x)$. Thus control information cannot reach lower-security variables.
-\end{enumerate}
-Combined, these ensure no High input can influence any Low output. \qed
-
-\textbf{Corollary 1 (Non-Interference)}: If an input variable $h$ has type High and output variable $o$ has type Low, changing the value of $h$ cannot change the value of $o$ (assuming all other inputs remain fixed). This is the \textit{non-interference} property.
-
-\textbf{Corollary 2 (Information Flow Security)}: No information leaks from High-security inputs to Low-security outputs. Both explicit assignments and implicit control-flow channels are blocked.
-
-\subsection{Type Checking Examples
-
-\textbf{Example 1: Safe Program (Image Processing)}
-
-\begin{verbatim}
-Input:  medical_image : High
-Output: result : ?
-
-Program:  result := enhance(medical_image)
-
-Type Check:
-  enhance is type-preserving: High → High
-  Assignment: High ⊑ result_type? 
-  Yes, if result is declared High or inferred as High
-  Verdict: ✓ SAFE (output labeled private/High)
-\end{verbatim}
-
-The output is private and only the owner can access it.
-
-\textbf{Example 2: Explicit Leak (Malicious Program)}
-
-\begin{verbatim}
-Input:  secret : High, public_out : Low
-Output: result : ?
-
-Program:
-  result := secret + 1
-  if (result > 1000) then
-    public_out := 1
-  else
-    public_out := 0
-
-Type Check:
-  Line 1: High + Low = High ⊔ Low = High
-          result : High (inferred)
-  Line 2: condition is High, so pc = High
-  Line 4: Assignment public_out : Low
-          Check: pc ⊔ 1 ⊑ Low?
-          High ⊔ Low ⊑ Low? NO!
-  Verdict: ✗ TYPE ERROR - Implicit leak detected
-\end{verbatim}
-
-The program is rejected. The malicious attempt to leak via control flow is blocked.
-
-\textbf{Example 3: Implicit Leak via Timing}
-
-\begin{verbatim}
-Input:  secret : High, counter : Low
-Output: counter
-
-Program:
-  while (secret > 0):
-    counter := counter + 1
-    secret := secret - 1
-  return counter
-
-Type Check:
-  Condition: secret is High, so pc = High
-  Assignment in loop: counter : Low
-  Check: pc ⊔ (counter+1) ⊑ Low?
-  High ⊔ Low ⊑ Low? NO!
-  Verdict: ✗ TYPE ERROR - Timing leak detected
-\end{verbatim}
-
-The loop count would reveal the value of the secret. Type checking blocks this.
-
-\subsection{Soundness and Correctness Proofs}
-
-\textbf{Theorem 2 (Type Soundness for Explicit Flows)}: If an assignment $x := y$ passes type checking (i.e., $\text{type}(y) \sqsubseteq \text{type}(x)$), then no information leaks from $y$ to $x$ beyond the declared types.
-
-\textbf{Proof}: By type ordering, $\text{type}(y) \sqsubseteq \text{type}(x)$ means the value of $y$ can only flow to $x$ if $x$'s security level permits it. If $\text{type}(y) = \text{High}$ and $\text{type}(x) = \text{Low}$, the type constraint is violated and the assignment is rejected. \qed
-
-\textbf{Theorem 3 (Implicit Flow Prevention)}: Consider a conditional statement:
-\begin{verbatim}
-if (c) then S₁ else S₂
-\end{verbatim}
-If all statements in $S_1$ and $S_2$ type-check with $pc = \text{type}(c)$, then the execution of either branch does not leak information about $c$ to Low-security variables.
-
-\textbf{Proof}: Any assignment $x := e$ inside the conditional must satisfy $(pc \sqcup \text{type}(e)) \sqsubseteq \text{type}(x)$. Since $pc = \text{type}(c)$, we have $(\text{type}(c) \sqcup \text{type}(e)) \sqsubseteq \text{type}(x)$. If $\text{type}(c) = \text{High}$ and $\text{type}(x) = \text{Low}$, the constraint fails. Thus, no High-dependent assignment can reach Low variables. \qed
-
-\textbf{Theorem 4 (Loop Termination Timing Leak Prevention)}: For loops with secret-dependent loop counts:
-\begin{verbatim}
-while (secret > 0):
-  x := f(x)
-\end{verbatim}
-If $\text{type}(secret) = \text{High}$ and $\text{type}(x) = \text{Low}$, the type system rejects this program.
-
-\textbf{Proof}: The loop condition has type High, so $pc = \text{High}$. All assignments inside the loop must satisfy $(\text{High} \sqcup \text{type}(f(x))) \sqsubseteq \text{type}(x)$. For Low $x$, this becomes $(\text{High} \sqcup \cdots) \sqsubseteq \text{Low}$, which fails. The timing side channel is blocked at compile time. \qed
-
-\subsection{Application to API Commands}
-
-For the secure data hosting system, Volpano's guarantees apply to each command:
-
-\textbf{READ Command}: 
-\begin{equation}
-\text{READ}(\text{data} : \tau) \to (\text{output} : \tau)
-\end{equation}
-Type preservation: output type matches data type. No downgrading without declassification.
-
-\textbf{WRITE Command}:
-\begin{equation}
-\text{WRITE}(\text{dest} : \tau_{\text{dest}}, \text{source} : \tau_{\text{src}}) \to \text{void}
-\end{equation}
-Constraint: $\tau_{\text{src}} \sqsubseteq \tau_{\text{dest}}$. Prevents untrusted data from corrupting trusted storage.
-
-\textbf{RUN\_PROGRAM Command}:
-\begin{equation}
-\text{RUN\_PROGRAM}(\text{inputs} : \vec{\tau}, \text{code} : P) \to (\text{output} : \tau_{\text{out}})
-\end{equation}
-Constraint: $P$ type-checks with input types $\vec{\tau}$ and output type $\tau_{\text{out}}$. By Theorem 1, no High input can influence Low output.
-
-\subsection{Type Checking Examples
-
-\subsection{Hospital Application}
-
-\textbf{Scenario}: Process medical images for enhancement and anonymize for research.
-
+Our argument has two levels:
 \begin{itemize}
-    \item \textbf{Image Enhancement}: Input (private/High) → Output (private/High). Only owner accesses result.
-    \item \textbf{Anonymization}: Input (private/High) → Output (public/Low) via approved declassifier. Researchers can access anonymized output.
-    \item \textbf{Statistical Analysis}: Aggregate patient measurements → Produce population statistics with differential privacy noise. Output labeled Low.
+    \item \textbf{Program level}: typing rules enforce non-interference for accepted programs.
+    \item \textbf{API level}: command preconditions prevent unsafe state transitions.
 \end{itemize}
 
-In all cases, the Volpano type system ensures that no individual patient data leaks beyond what was explicitly approved via declassification.
+A trace is secure if every command instance satisfies its local rule and no command bypasses the enforcement path.
+
+\subsection{Typing Semantics Used in Analysis}
+
+Let $\Gamma$ map variables to lattice levels and let $pc$ denote control context level.
+
+Assignment rule:
+\[
+\Gamma \vdash x := e \quad \text{iff} \quad (\Gamma \vdash e : \tau_e) \land (pc \sqcup \tau_e \sqsubseteq \Gamma(x))
+\]
+
+Interpretation: an assignment is safe only if both data dependency ($\tau_e$) and control dependency ($pc$) are no more confidential than the destination.
+
+\subsection{Theorem-Style Guarantees}
+
+\textbf{Proposition 1 (Accepted Program Non-Interference).}
+Given fixed low inputs, if program $P$ type-checks under the above rule, changing high inputs cannot change low-observable outputs.
+
+\textbf{Justification.}
+Induction over program structure:
+\begin{itemize}
+    \item base cases (assignments) satisfy lattice constraint directly,
+    \item sequential composition preserves constraints,
+    \item conditionals/loops propagate secret dependence into $pc$, preventing writes to lower levels.
+\end{itemize}
+
+\textbf{Proposition 2 (Safe Rejection Property).}
+If type-checking fails, the server executes no user code and emits no derived output object.
+
+\textbf{Security significance.}
+Potential leaks are transformed into denied requests, preserving confidentiality by refusing unsafe computation paths.
+
+\subsection{Command-by-Command Security Argument}
+
+\textbf{READ}. Security depends on two checks: policy authorization and channel endpoint authentication.\
+If either is missing, confidentiality can fail (unauthorized read or man-in-the-middle disclosure). With both present, output remains at original label.
+
+\textbf{WRITE}. Security depends on write authorization plus integrity policy.\
+This prevents low-trust principals from corrupting high-trust records and preserves G3.
+
+\textbf{RUN\_PROGRAM}. Security depends on strict pre-execution typing and no fallback execution mode.\
+This command is the main defense against insider exfiltration code.
+
+\textbf{RELABEL}. Security depends on approved transform, parameter bounds, and audit logging.\
+Without these, RELABEL would invalidate non-interference globally.
+
+\subsection{Representative Attack Cases}
+
+\textbf{Case 1: Explicit leak attempt}
+\begin{verbatim}
+public_out := private_record
+\end{verbatim}
+Rejected because High $\sqsubseteq$ Low is false.
+
+\textbf{Case 2: Implicit branch leak}
+\begin{verbatim}
+if private_record.flag then public_out := 1 else public_out := 0
+\end{verbatim}
+Rejected because $pc=\text{High}$ in both branches, so writing to Low fails.
+
+\textbf{Case 3: Replay of old RELABEL request}
+Replayed transport message is ineffective when channel/session integrity and freshness checks are enforced and request identifiers are audited. This links channel assumptions to application safety.
+
+\subsection{What Verification Does and Does Not Prove}
+
+The analysis supports:
+\begin{itemize}
+    \item confidentiality against modeled network and insider-program attacks,
+    \item integrity of high-trust state under command checks,
+    \item explicit localization of permitted downgrades.
+\end{itemize}
+
+It does not prove:
+\begin{itemize}
+    \item security under server compromise,
+    \item absence of all covert channels,
+    \item organizational correctness of declassification approvals.
+\end{itemize}
+
+These boundaries are necessary for honest correspondence between theorem assumptions and real deployment claims.

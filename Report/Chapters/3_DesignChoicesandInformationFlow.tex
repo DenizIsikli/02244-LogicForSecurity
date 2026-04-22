@@ -1,65 +1,80 @@
-\section{Volpano Type System Analysis}
+\section{Design Choices and Information-Flow Argument}
 
-\subsection{Type Lattice and Ordering}
+\subsection{Why a Three-Level Lattice}
 
-The Volpano method assigns security types to variables. The type lattice is:
-\begin{equation}
+We use:
+\[
 \textbf{Low} \sqsubseteq \textbf{Medium} \sqsubseteq \textbf{High}
-\end{equation}
+\]
+because it matches the domain policy exactly (public, friends, private) while still being simple enough for static checking and manual reasoning.
 
-The ordering relation represents permissible information flow: $\tau_1 \sqsubseteq \tau_2$ means that information of type $\tau_1$ can flow to type $\tau_2$. The join operation is:
-\begin{align}
-\textbf{Low} \sqcup \textbf{Low} &= \textbf{Low} \\
-\textbf{Low} \sqcup \textbf{Medium} &= \textbf{Medium} \\
-\textbf{Low} \sqcup \textbf{High} &= \textbf{High}
-\end{align}
-
-\subsection{Type Inference Rules}
-
-\textbf{Declaration}: Variables receive declared types: $\vdash x : \tau$ where $\tau \in \{\textbf{Low}, \textbf{Medium}, \textbf{High}\}$
-
-\textbf{Constants}: Literals are type Low: $\vdash c : \textbf{Low}$
-
-\textbf{Expressions}: Binary operations combine types via join:
-\begin{equation}
-\frac{\vdash e_1 : \tau_1 \quad \vdash e_2 : \tau_2}{\vdash e_1 \oplus e_2 : \tau_1 \sqcup \tau_2}
-\end{equation}
-
-\textbf{Assignments}: The type of the expression must be at most the type of the variable:
-\begin{equation}
-\frac{\vdash e : \tau_e \quad \tau_e \sqsubseteq \tau_x}{\vdash x := e}
-\end{equation}
-
-This prevents High-to-Low flows: if $\tau_x = \textbf{Low}$ and $\tau_e = \textbf{High}$, then $\textbf{High} \not\sqsubseteq \textbf{Low}$, so the assignment is a type error.
-
-\subsection{Implicit Flow Analysis}
-
-Control structures create implicit information flows. The Volpano method tracks a \textbf{program counter (pc)} level:
-
-\textbf{If Statement}: The condition's type becomes the pc level within the guarded block:
-\begin{equation}
-\frac{\vdash b : \tau_b \quad \text{pc} := \tau_b \quad \vdash S_1, S_2}{\vdash \textbf{if } b \textbf{ then } S_1 \textbf{ else } S_2}
-\end{equation}
-
-Any assignment within the if block must satisfy: $\text{pc} \sqcup \tau_e \sqsubseteq \tau_x$.
-
-\textbf{Example}: If a condition depends on a High variable (secret), then any assignment in the if block must go to a High variable, otherwise the assignment leaks information about the condition.
-
-\begin{verbatim}
-if (secret : High) then          // pc = High
-    public_output : Low := 1     // ERROR: High ⊔ Low ⊑ Low? No!
-\end{verbatim}
-
-The type checker rejects this because High $\not\sqsubseteq$ Low.
-
-\subsection{Application to Data Hosting}
-
-\textbf{Data labels map to types}:
+Security relevance of this choice:
 \begin{itemize}
-    \item private → High: Cannot assign to Low variables
-    \item friends → Medium: Can assign to Medium or High, but not Low
-    \item public → Low: Can assign to any variable
+    \item it captures collaboration (Medium) without collapsing into all-or-nothing secrecy,
+    \item it avoids ad hoc exceptions: every flow is judged by the same order relation,
+    \item it makes violations explicit as lattice-order failures.
 \end{itemize}
 
-\textbf{Program execution}: When a program $P$ runs on inputs $\vec{x}$ with types $\vec{\tau}$, the Volpano type checker verifies that the program body satisfies all type constraints. If type checking passes, the output type $\tau_{\text{out}}$ is computed. Programs are rejected at type-check time if they would leak information.
+\subsection{Core Typing Rules and Their Purpose}
+
+For expressions:
+\[
+\frac{\Gamma \vdash e_1 : \tau_1 \qquad \Gamma \vdash e_2 : \tau_2}{\Gamma \vdash e_1 \oplus e_2 : \tau_1 \sqcup \tau_2}
+\]
+The join reflects that combined expressions depend on both inputs.
+
+For assignments:
+\[
+\frac{\Gamma \vdash e : \tau_e \qquad \tau_e \sqsubseteq \tau_x}{\Gamma \vdash x := e}
+\]
+This is the primary explicit-flow barrier. A violation is not a policy warning; it is a static rejection.
+
+For conditionals with program counter $pc$:
+\[
+\text{required: } (pc \sqcup \tau_e) \sqsubseteq \tau_x
+\]
+This blocks implicit flows where branch structure reveals secrets.
+
+\subsection{Design Decisions and Security Effects}
+
+\textbf{Decision D1: Type-check before execution}.\
+Reason: if a malicious program runs first, leakage may be irreversible.\
+Effect: unsafe code never executes, satisfying G1 by construction.
+
+\textbf{Decision D2: Keep authorization and typing separate}.\
+Reason: access control answers \emph{who may request}; typing answers \emph{what information may influence what}.\
+Effect: protects against both external access violations and insider exfiltration code.
+
+\textbf{Decision D3: Use TLS-style secure channels for transport}.\
+Reason: without authenticated confidential channels, attacker can read or alter traffic regardless of internal typing.
+Effect: supports G1 and G3 in transit, while typing enforces them in computation.
+
+\textbf{Decision D4: Declassification is explicit and narrowly scoped}.\
+Reason: practical systems require release of useful low-level aggregates.
+Effect: every High $\rightarrow$ Low release is intentional, reviewable, and auditable (G4).
+
+\subsection{Why Specific Attacks Are Prevented}
+
+\textbf{Attack A1: Direct exfiltration}. Attempt: assign private field to public output.\
+Blocked because assignment requires High $\sqsubseteq$ Low, which is false.
+
+\textbf{Attack A2: Branch leak}. Attempt: branch on secret and write branch-dependent value to Low variable.\
+Blocked because $pc=\text{High}$ in the branch; then $(pc\sqcup\text{Low})\sqsubseteq\text{Low}$ fails.
+
+\textbf{Attack A3: Network tampering/replay}. Attempt: modify or replay command messages.\
+Blocked at channel layer by integrity/authentication checks, provided endpoint keys and certificate validation are correct.
+
+\textbf{Attack A4: "Legitimate" statistical leak}. Attempt: query repeatedly until individual values can be inferred.\
+Mitigated by approved declassification transforms and privacy budget constraints (Chapter 6), not by base typing alone.
+
+\subsection{Limitations and Honest Boundaries}
+
+The argument intentionally does not claim protection against:
+\begin{itemize}
+    \item compromised trusted server code,
+    \item covert channels outside the model (hardware timing, cache state),
+    \item misuse of declassification policy if governance is weak.
+\end{itemize}
+
+Stating these limits strengthens correctness of claims and keeps the proof obligations aligned with the course framework.
 

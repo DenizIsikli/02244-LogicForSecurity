@@ -1,19 +1,66 @@
-\section{System Design and Security Goals}
+\section{System Participants, Roles, and Assumptions}
 
-\subsection{System Model}
+\subsection{Participants and Trust Boundaries}
 
-\textbf{Participants}: Hosting server (trusted), data owners (users), authorized users (friends), and untrusted programs.
-
-\textbf{Data labels}: Each object carries a confidentiality label:
+We model four principal roles:
 \begin{itemize}
-    \item \texttt{private}: Type High (owner only)
-    \item \texttt{friends}: Type Medium (owner + designated friends)  
-    \item \texttt{public}: Type Low (all authenticated users)
+    \item \textbf{Data owner} (e.g., doctor): uploads and manages private records.
+    \item \textbf{Friend/authorized collaborator}: may access selected medium-level data.
+    \item \textbf{General authenticated user}: can access only public outputs.
+    \item \textbf{Hosting server}: trusted for enforcement of access control, typing, and audit policy.
 \end{itemize}
+
+Untrusted analysis programs are treated as attacker-controlled code submitted by otherwise valid users. Therefore, user authentication alone is insufficient; language-level flow control is required.
+
+\subsection{Security Labels and Meaning}
+
+Each stored object has a confidentiality label:
+\begin{itemize}
+    \item \texttt{private} $\equiv$ High: owner-only medical data,
+    \item \texttt{friends} $\equiv$ Medium: owner and explicitly granted collaborators,
+    \item \texttt{public} $\equiv$ Low: releasable artifacts and statistics.
+\end{itemize}
+
+Label semantics are enforced both at API level (who may call which command) and at program-analysis level (which values may influence which outputs).
+
+\subsection{Attacker Model}
+
+We assume a Dolev-Yao style network attacker outside trusted endpoints:
+\begin{itemize}
+    \item can intercept, replay, and reorder traffic,
+    \item can initiate sessions and submit malicious programs,
+    \item cannot break cryptographic primitives or compromise trusted server internals.
+\end{itemize}
+
+Additionally, we consider an \emph{insider misuse attacker}: a legitimate user attempting to extract private data through crafted code or indirect channels (for example branch behavior).
+
+\subsection{Channel Abstraction and Justification}
+
+The model uses abstract secure channels, corresponding to TLS-like endpoints between user and server. This abstraction is valid only under explicit guarantees:
+\begin{itemize}
+    \item \textbf{Confidentiality}: passive network observers cannot read plaintext payloads.
+    \item \textbf{Integrity}: altered packets are detected and rejected.
+    \item \textbf{Endpoint authentication}: the client talks to the intended server identity.
+\end{itemize}
+
+What we \emph{do not} assume from the channel abstraction:
+\begin{itemize}
+    \item no guarantee about application-level authorization logic,
+    \item no guarantee about confidentiality once data is legitimately delivered to an endpoint,
+    \item no prevention of leaks caused by accepted program semantics.
+\end{itemize}
+
+Hence channels are necessary but not sufficient. They protect data \emph{in transit}; the type system and API checks protect data \emph{in processing and storage}.
 
 \subsection{Security Goals}
 
-\textbf{Confidentiality}: Type system enforces High $\not\to$ Low. Even if a program is malicious, High-labeled data cannot influence outputs visible to Low-clearance users. This prevents both explicit leaks (direct assignments) and implicit leaks (information released through control flow).
+Our goals are stated as properties over traces and program runs:
+\begin{itemize}
+    \item \textbf{G1: Confidentiality/non-interference}. High inputs do not influence Low outputs, except via approved declassification.
+    \item \textbf{G2: Controlled collaboration}. Medium data is visible only to owner and delegated collaborators.
+    \item \textbf{G3: Integrity of sensitive state}. Low-trust inputs cannot overwrite High-integrity objects.
+    \item \textbf{G4: Explicit accountability}. Every downgrade operation is auditable and policy-bound.
+\end{itemize}
 
-\textbf{Integrity}: Dual property: Low (untrusted) data cannot modify High (trusted) storage. In practice, write authorization is checked via integrity labels and enforced through type constraints.
+These goals are referenced throughout later chapters to ensure each design decision has a clear security purpose.
 

@@ -1,43 +1,78 @@
-\section{Core Operations}
+\section{Server API and Security Semantics}
 
-The server provides API commands that interact with the Volpano type system:
+This chapter specifies each command as a security-relevant transition. The purpose is to show not only what the API does, but why each operation preserves the goals from Chapter 2.
 
-\subsection{Data Operations}
+\subsection{Command-Level Contract Format}
 
-\textbf{UPLOAD}$(data, label)$: Store data with confidentiality label (private, friends, public). Stored objects have type High, Medium, or Low respectively.
-
-\textbf{READ}$(data\_id, user)$: Return data if user has access. Type of returned data matches the label:
+For each command we define:
 \begin{itemize}
-    \item private → High: Only owner can read
-    \item friends → Medium: Owner and designated friends can read
-    \item public → Low: All users can read
+    \item \textbf{Preconditions}: authentication, authorization, typing assumptions.
+    \item \textbf{Transition}: state updates and generated objects.
+    \item \textbf{Postconditions}: confidentiality/integrity properties preserved.
 \end{itemize}
 
-\textbf{WRITE}$(data\_id, new\_data)$: Modify data. Authorization is checked via integrity labels. The updated data has type $\tau_{\text{old}} \sqcup \tau_{\text{new}}$.
+\subsection{Data and Access Commands}
 
-\subsection{Program Execution}
+\textbf{UPLOAD}$(u, d, \ell)$
+\begin{itemize}
+    \item Preconditions: user $u$ authenticated; label $\ell \in \{\text{Low, Medium, High}\}$.
+    \item Transition: store object $o=(owner=u, data=d, label=\ell)$.
+    \item Postcondition: object enters the lattice at a declared level; no downgrade occurs.
+\end{itemize}
 
-\textbf{RUN\_PROGRAM}$(program, input\_ids, output\_label)$: Execute program with Volpano type checking.
+\textbf{READ}$(u, o)$
+\begin{itemize}
+    \item Preconditions: access policy allows $u$ for $o.label$.
+    \item Transition: return value with same type as $o.label$.
+    \item Postcondition: read is type-preserving; confidentiality depends on access policy correctness and authenticated channel delivery.
+\end{itemize}
 
-\textbf{Process}:
+\textbf{WRITE}$(u, o, d')$
+\begin{itemize}
+    \item Preconditions: write authorization for $u$ and object $o$.
+    \item Transition: update object content with integrity checks.
+    \item Postcondition: no low-integrity principal can silently overwrite high-integrity state (goal G3).
+\end{itemize}
+
+\subsection{Computation Command}
+
+\textbf{RUN\_PROGRAM}$(u, P, inputs, requested\_label)$
 \begin{enumerate}
-    \item Assign types to inputs based on their labels
-    \item Type-check program body (verify no High→Low flows)
-    \item If type-check passes, execute program
-    \item Store output with inferred type
-    \item If type-check fails, reject program (no execution)
+    \item Resolve each input object to type $\tau_i$ from its label.
+    \item Type-check $P$ under environment $\Gamma = \{x_i : \tau_i\}$.
+    \item If typing fails, reject with no execution and no output.
+    \item If typing succeeds, infer output type $\tau_{out}$.
+    \item Store output only with label compatible with $\tau_{out}$.
 \end{enumerate}
 
-\subsection{Declassification}
-
-\textbf{RELABEL}$(data\_id, new\_label)$ with declassification: Owner can downgrade labels (e.g., private→public) for approved transformations:
-
+Security rationale:
 \begin{itemize}
-    \item \textbf{Anonymization}: Remove PII (names, IDs, contact info)
-    \item \textbf{Aggregation}: Compute statistics (mean, median) → safe for public
-    \item \textbf{Differential Privacy}: Add calibrated noise to queries
+    \item Prevents explicit and implicit leaks before runtime.
+    \item Prevents users from requesting an output label lower than inferred security type.
+    \item Makes security failure observable and auditable at submission time.
 \end{itemize}
 
-These operations are marked as trusted declassifiers and bypass normal type checking. Example: anonymize patient records → output labeled Low (safe for researchers).
+\subsection{Declassification Command}
 
-\subsection{Command Specifications}
+\textbf{RELABEL}$(u, o, \ell_{new}, T)$ where $T$ is a transformation descriptor.
+
+Downgrade ($\ell_{new} \sqsubset o.label$) is accepted \emph{only if}:
+\begin{itemize}
+    \item caller has declassification privilege,
+    \item $T$ is in approved transform set,
+    \item transform parameters satisfy policy constraints (for example minimum group size, privacy budget),
+    \item operation is logged with justification metadata.
+\end{itemize}
+
+Without these checks, RELABEL would be a generic High $\rightarrow$ Low escape and break G1.
+
+\subsection{Why This API Structure Matters}
+
+A recurring failure mode in protocol/system reports is to treat API commands as neutral operations. Here, each command is a proof obligation:
+\begin{itemize}
+    \item \textbf{UPLOAD/READ/WRITE} enforce baseline policy consistency,
+    \item \textbf{RUN\_PROGRAM} enforces non-interference for untrusted code,
+    \item \textbf{RELABEL} localizes all sanctioned downgrades.
+\end{itemize}
+
+This separation is what lets us reason compositionally in the next chapter: if each command preserves an invariant, command traces preserve global security goals.
