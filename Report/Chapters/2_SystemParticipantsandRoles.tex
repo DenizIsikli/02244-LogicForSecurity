@@ -1,27 +1,38 @@
 \section{System Participants, Roles, and Assumptions}
 
-\subsection{Participants and Trust Boundaries}
+\subsection{Actors and Trust Boundaries}
 
-We model four principal roles:
+Let $\mathcal{A}$ be the set of actors that may appear in labels. In our deployment, $\mathcal{A}$ includes:
 \begin{itemize}
-    \item \textbf{Data owner} (e.g., doctor): uploads and manages private records.
-    \item \textbf{Friend/authorized collaborator}: may access selected medium-level data.
-    \item \textbf{General authenticated user}: can access only public outputs.
-    \item \textbf{Hosting server}: trusted for enforcement of access control, typing, and audit policy.
+    \item doctors (data owners),
+    \item collaborating clinicians,
+    \item researchers,
+    \item administrators,
+    \item the server principal.
 \end{itemize}
 
-Untrusted analysis programs are treated as attacker-controlled code submitted by otherwise valid users. Therefore, user authentication alone is insufficient; language-level flow control is required.
-
-\subsection{Security Labels and Meaning}
-
-Each stored object has a confidentiality label:
+Trust assumptions:
 \begin{itemize}
-    \item \texttt{private} $\equiv$ High: owner-only medical data,
-    \item \texttt{friends} $\equiv$ Medium: owner and explicitly granted collaborators,
-    \item \texttt{public} $\equiv$ Low: releasable artifacts and statistics.
+    \item the server enforcement code is trusted,
+    \item uploaded user programs are untrusted,
+    \item users are authenticated over a secure channel before invoking API commands.
 \end{itemize}
 
-Label semantics are enforced both at API level (who may call which command) and at program-analysis level (which values may influence which outputs).
+\subsection{Security Labels in the Decentralized Model}
+
+Each object has label $L=(C,I)$:
+\begin{itemize}
+    \item confidentiality component $C=\bigwedge_i (o_i:r_i)$,
+    \item integrity component $I=\bigwedge_j (o_j \leftarrow w_j)$.
+\end{itemize}
+
+Intuition:
+\begin{itemize}
+    \item $(o:r)$ says owner $o$ permits readers in $r$.
+    \item $(o \leftarrow w)$ says owner $o$ trusts writers in $w$.
+\end{itemize}
+
+For fixed owner $o$, confidentiality flow from source to destination is allowed only when destination readers are a subset of source readers (no new readers added). For integrity, source writers must be a subset of destination writers (no increase in trust without proof).
 
 \subsection{Attacker Model}
 
@@ -32,35 +43,27 @@ We assume a Dolev-Yao style network attacker outside trusted endpoints:
     \item cannot break cryptographic primitives or compromise trusted server internals.
 \end{itemize}
 
-Additionally, we consider an \emph{insider misuse attacker}: a legitimate user attempting to extract private data through crafted code or indirect channels (for example branch behavior).
+We additionally consider an insider misuse attacker: a valid user who attempts illegal flow through crafted source code or strategic API call sequences.
 
 \subsection{Channel Abstraction and Justification}
 
-The model uses abstract secure channels, corresponding to TLS-like endpoints between user and server. This abstraction is valid only under explicit guarantees:
+The API assumes a secure channel equivalent to TLS with endpoint authentication (as allowed by the project statement). This gives:
 \begin{itemize}
-    \item \textbf{Confidentiality}: passive network observers cannot read plaintext payloads.
-    \item \textbf{Integrity}: altered packets are detected and rejected.
-    \item \textbf{Endpoint authentication}: the client talks to the intended server identity.
+    \item confidentiality in transit,
+    \item integrity of command/response messages,
+    \item endpoint authentication.
 \end{itemize}
 
-What we \emph{do not} assume from the channel abstraction:
-\begin{itemize}
-    \item no guarantee about application-level authorization logic,
-    \item no guarantee about confidentiality once data is legitimately delivered to an endpoint,
-    \item no prevention of leaks caused by accepted program semantics.
-\end{itemize}
-
-Hence channels are necessary but not sufficient. They protect data \emph{in transit}; the type system and API checks protect data \emph{in processing and storage}.
+The channel does \emph{not} replace application-level flow control. It prevents transport attacks, not semantic leaks caused by accepted computations.
 
 \subsection{Security Goals}
 
-Our goals are stated as properties over traces and program runs:
+We prove command-level preservation of these goals:
 \begin{itemize}
-    \item \textbf{G1: Confidentiality/non-interference}. High inputs do not influence Low outputs, except via approved declassification.
-    \item \textbf{G2: Controlled collaboration}. Medium data is visible only to owner and delegated collaborators.
-    \item \textbf{G3: Integrity of sensitive state}. Low-trust inputs cannot overwrite High-integrity objects.
-    \item \textbf{G4: Explicit accountability}. Every downgrade operation is auditable and policy-bound.
+    \item \textbf{G1 Confidentiality}: no illegal read-down from high-confidentiality labels.
+    \item \textbf{G2 Integrity}: no illegal write-up into high-integrity state.
+    \item \textbf{G3 Secure program execution}: only flow-safe user programs are executed.
+    \item \textbf{G4 Controlled declassification}: confidentiality relaxation occurs only with proper authority and approved transforms.
+    \item \textbf{G5 Accountability}: every declassification is logged with actor, authority, and justification.
 \end{itemize}
-
-These goals are referenced throughout later chapters to ensure each design decision has a clear security purpose.
 

@@ -1,51 +1,48 @@
 \section{Introduction}
 
-This report presents the design and analysis of a secure data-hosting service for medical information. Our goal is not only to describe implementation steps, but to justify \emph{why} each design decision is security-relevant under the course model.
+This report presents a secure data-hosting service for medical information using the decentralized information-flow model of Myers and Liskov \cite{MyersLiskov97}. The goal is not only to describe a server API, but to give precise security arguments for why each API command preserves confidentiality and integrity.
 
 The service supports three capabilities:
 \begin{itemize}
-    \item user-controlled confidentiality labels,
-    \item policy-based sharing (owner, friends, public),
-    \item execution of untrusted analysis programs.
+    \item user-controlled security labels over data and program variables,
+    \item policy-based sharing and collaboration,
+    \item execution of user-provided programs after information-flow checking.
 \end{itemize}
 
-The core challenge is to allow useful computation without allowing confidential data to leak. We address this with a Volpano-style information-flow type system and a precise set of assumptions about attacker power and communication channels.
+The core challenge is to support useful computation and controlled sharing without illegal flows. We therefore use decentralized labels with explicit owners, readers, and writers, and we model declassification using the authority mechanism required by Myers-Liskov.
 
 \subsection{Evaluation Scope and Method}
 
-The report argues security in three layers:
+The security argument is structured in three layers:
 \begin{enumerate}
-    \item \textbf{Model layer}: explicit assumptions (attacker, trust boundaries, channel guarantees).
-    \item \textbf{Design layer}: each protocol/API decision is connected to a target property.
-    \item \textbf{Verification layer}: formal typing arguments and attack-case analysis, not only tool output.
+    \item \textbf{Model layer}: actors, trust assumptions, attacker model, and secure-channel assumptions.
+    \item \textbf{Design layer}: API and program model choices justified against target security goals.
+    \item \textbf{Verification layer}: per-command flow arguments and declassification justification.
 \end{enumerate}
 
-This structure is intentional: completeness of features is not enough for a strong grade if the security argument is implicit. We therefore make every claim traceable to assumptions, rules, and consequences.
+This structure follows the project priority that a smaller but precisely justified design is better than broad but superficial feature coverage.
 
-\subsection{Security Lattice and Informal Intuition}
+\subsection{Decentralized Labels}
 
-We use confidentiality levels:
+For confidentiality we use policies of form $o:r$, where owner $o$ allows readers in set $r$.
+For integrity we use policies of form $o \leftarrow w$, where owner $o$ trusts writers in set $w$.
+
+A full security label is a pair:
 \[
-\textbf{Low} \sqsubseteq \textbf{Medium} \sqsubseteq \textbf{High}
+L = (C, I)
 \]
+where $C$ is a conjunction of confidentiality policies and $I$ is a conjunction of integrity policies.
 
-Mapped to the domain:
+This model is decentralized because different owners can independently state constraints on the same value.
+
+\subsection{Why Myers-Liskov for This Project}
+
+Myers-Liskov is the appropriate basis for this project because declassification is a required feature in our hospital setting. The model provides:
 \begin{itemize}
-    \item \texttt{public} $\leftrightarrow$ Low,
-    \item \texttt{friends} $\leftrightarrow$ Medium,
-    \item \texttt{private} $\leftrightarrow$ High.
+    \item decentralized confidentiality and integrity labels,
+    \item static information-flow checks for user programs,
+    \item explicit declassification with authority, instead of ad hoc downgrading.
 \end{itemize}
 
-Intuitively, information may flow upward in the lattice (e.g., public into private processing), but never downward unless an explicit and trusted declassification step is invoked.
-
-\subsection{Why Volpano for This Project}
-
-The Volpano method is appropriate because the system executes untrusted code. If checks were only dynamic, leakage might occur before detection. Static typing gives a stronger pre-execution guarantee:
-\begin{itemize}
-    \item explicit flows are blocked by assignment constraints,
-    \item implicit flows are blocked through program-counter tracking,
-    \item rejection happens before execution, so unsafe programs never run.
-\end{itemize}
-
-This aligns with the project requirement to reason from theory to system behavior, rather than relying only on empirical testing.
+This keeps the report aligned with the project instruction to use course methods and, for declassification, specifically the Myers-Liskov model.
 

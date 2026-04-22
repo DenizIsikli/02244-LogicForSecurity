@@ -1,90 +1,78 @@
 \section{Security Analysis of API Commands}
 
-\subsection{From Local Rules to System Guarantees}
+\subsection{Proof Structure}
 
-Our argument has two levels:
+We argue security at two levels:
 \begin{itemize}
-    \item \textbf{Program level}: typing rules enforce non-interference for accepted programs.
-    \item \textbf{API level}: command preconditions prevent unsafe state transitions.
+    \item \textbf{Local command preservation}: each API command preserves global flow invariants.
+    \item \textbf{Trace composition}: if every step preserves invariants, whole execution traces are secure.
 \end{itemize}
 
-A trace is secure if every command instance satisfies its local rule and no command bypasses the enforcement path.
+Invariants used below:
+\begin{itemize}
+    \item \textbf{I1 Label validity}: every stored object has a well-formed decentralized label.
+    \item \textbf{I2 Read safety}: reads are served only to principals permitted by confidentiality policies.
+    \item \textbf{I3 Write safety}: writes accepted only when integrity constraints allow them.
+    \item \textbf{I4 Program safety}: user code executes only after successful flow checking.
+    \item \textbf{I5 Declassification safety}: confidentiality relaxation only through authority-checked trusted transforms.
+\end{itemize}
 
-\subsection{Typing Semantics Used in Analysis}
+\subsection{Program-Level Flow Condition}
 
-Let $\Gamma$ map variables to lattice levels and let $pc$ denote control context level.
+Let $\Gamma$ map variables to decentralized labels and $pc$ denote control-context label.
 
 Assignment rule:
 \[
-\Gamma \vdash x := e \quad \text{iff} \quad (\Gamma \vdash e : \tau_e) \land (pc \sqcup \tau_e \sqsubseteq \Gamma(x))
+\Gamma,pc \vdash x := e \quad \text{iff} \quad \Gamma \vdash e:L_e \land (pc \sqcup L_e \sqsubseteq \Gamma(x))
 \]
 
-Interpretation: an assignment is safe only if both data dependency ($\tau_e$) and control dependency ($pc$) are no more confidential than the destination.
+This ensures both explicit and implicit dependencies are legal flows under decentralized labels.
 
-\subsection{Theorem-Style Guarantees}
+\subsection{Command-by-Command Preservation Arguments}
 
-\textbf{Proposition 1 (Accepted Program Non-Interference).}
-Given fixed low inputs, if program $P$ type-checks under the above rule, changing high inputs cannot change low-observable outputs.
+\textbf{UPLOAD preserves I1}. Labels are parsed and validated before object creation. Invalid labels are rejected.
 
-\textbf{Justification.}
-Induction over program structure:
+\textbf{READ\_DATA preserves I2}. Server returns data only if requester is in the allowed reader sets implied by confidentiality policies. Otherwise request fails without data release.
+
+\textbf{WRITE\_DATA preserves I3}. Server checks writer trust constraints before mutation. Unauthorized writers cannot modify protected objects.
+
+\textbf{UPLOAD\_PROGRAM preserves I4}. Unsafe source code is rejected at check time; no executable artifact is installed.
+
+\textbf{RUN\_PROGRAM preserves I4}. Call-time label constraints are checked against inferred interface and required output label lower bound; execution occurs only when constraints hold.
+
+\textbf{DECLASSIFY\_AND\_RELEASE preserves I5}. The command checks authority over every relaxed owner policy and enforces transform-specific restrictions. Without authority proof, no downgrade happens.
+
+\textbf{AUDIT\_QUERY supports I5 accountability}. Every declassification event is queryable by authorized auditors, enabling post hoc verification of policy compliance.
+
+\subsection{Representative Illegal Flows and Blocking Point}
+
+\textbf{Case A: explicit read-down in user code.}
+Blocked during \texttt{UPLOAD\_PROGRAM} static checking.
+
+\textbf{Case B: implicit leak via branch on secret.}
+Blocked by $pc$-aware assignment check.
+
+\textbf{Case C: unauthorized data overwrite by low-trust principal.}
+Blocked by \texttt{WRITE\_DATA} integrity-policy check.
+
+\textbf{Case D: direct relabel to wider reader set without authority.}
+Blocked by \texttt{DECLASSIFY\_AND\_RELEASE} authority check.
+
+\subsection{Trace-Level Theorem}
+
+\textbf{Theorem (API Trace Security under Assumptions).}
+Assume secure authenticated transport, trusted server enforcement code, and correct implementation of command checks specified in Chapter 4. Then any trace of accepted API calls preserves invariants I1--I5 and cannot produce illegal confidentiality or integrity flows except those explicitly permitted by authority-checked declassification.
+
+\textbf{Proof sketch.}
+By induction over trace length. Base case: empty trace satisfies invariants vacuously. Inductive step: each command preserves invariants as shown above. Therefore all finite traces preserve them.
+
+\subsection{Limitations}
+
+The theorem does not cover:
 \begin{itemize}
-    \item base cases (assignments) satisfy lattice constraint directly,
-    \item sequential composition preserves constraints,
-    \item conditionals/loops propagate secret dependence into $pc$, preventing writes to lower levels.
-\end{itemize}
-
-\textbf{Proposition 2 (Safe Rejection Property).}
-If type-checking fails, the server executes no user code and emits no derived output object.
-
-\textbf{Security significance.}
-Potential leaks are transformed into denied requests, preserving confidentiality by refusing unsafe computation paths.
-
-\subsection{Command-by-Command Security Argument}
-
-\textbf{READ}. Security depends on two checks: policy authorization and channel endpoint authentication.\
-If either is missing, confidentiality can fail (unauthorized read or man-in-the-middle disclosure). With both present, output remains at original label.
-
-\textbf{WRITE}. Security depends on write authorization plus integrity policy.\
-This prevents low-trust principals from corrupting high-trust records and preserves G3.
-
-\textbf{RUN\_PROGRAM}. Security depends on strict pre-execution typing and no fallback execution mode.\
-This command is the main defense against insider exfiltration code.
-
-\textbf{RELABEL}. Security depends on approved transform, parameter bounds, and audit logging.\
-Without these, RELABEL would invalidate non-interference globally.
-
-\subsection{Representative Attack Cases}
-
-\textbf{Case 1: Explicit leak attempt}
-\begin{verbatim}
-public_out := private_record
-\end{verbatim}
-Rejected because High $\sqsubseteq$ Low is false.
-
-\textbf{Case 2: Implicit branch leak}
-\begin{verbatim}
-if private_record.flag then public_out := 1 else public_out := 0
-\end{verbatim}
-Rejected because $pc=\text{High}$ in both branches, so writing to Low fails.
-
-\textbf{Case 3: Replay of old RELABEL request}
-Replayed transport message is ineffective when channel/session integrity and freshness checks are enforced and request identifiers are audited. This links channel assumptions to application safety.
-
-\subsection{What Verification Does and Does Not Prove}
-
-The analysis supports:
-\begin{itemize}
-    \item confidentiality against modeled network and insider-program attacks,
-    \item integrity of high-trust state under command checks,
-    \item explicit localization of permitted downgrades.
-\end{itemize}
-
-It does not prove:
-\begin{itemize}
-    \item security under server compromise,
+    \item compromised server runtime or keys,
     \item absence of all covert channels,
-    \item organizational correctness of declassification approvals.
+    \item legal/organizational misuse outside encoded policy checks.
 \end{itemize}
 
-These boundaries are necessary for honest correspondence between theorem assumptions and real deployment claims.
+These boundaries are explicitly reported so claims remain precise and defensible.

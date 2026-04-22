@@ -1,80 +1,70 @@
 \section{Design Choices and Information-Flow Argument}
 
-\subsection{Why a Three-Level Lattice}
+\subsection{Design Scope and Priority}
 
-We use:
-\[
-\textbf{Low} \sqsubseteq \textbf{Medium} \sqsubseteq \textbf{High}
-\]
-because it matches the domain policy exactly (public, friends, private) while still being simple enough for static checking and manual reasoning.
-
-Security relevance of this choice:
+The project prioritizes formal precision over feature breadth. We therefore choose a compact model with:
 \begin{itemize}
-    \item it captures collaboration (Medium) without collapsing into all-or-nothing secrecy,
-    \item it avoids ad hoc exceptions: every flow is judged by the same order relation,
-    \item it makes violations explicit as lattice-order failures.
+    \item one fixed actor universe $\mathcal{A}$,
+    \item decentralized labels on all persistent objects,
+    \item white-box user programs only,
+    \item a small trusted set of server-side declassifiers.
 \end{itemize}
 
-\subsection{Core Typing Rules and Their Purpose}
+This avoids unverifiable corner cases from arbitrary black-box user code.
 
-For expressions:
+\subsection{Why a Decentralized Label Model}
+
+Instead of a single global low/medium/high lattice, we use Myers-Liskov decentralized labels where different owners can impose independent constraints. This is important in collaborative healthcare data, where a record can be constrained by hospital policy, doctor policy, and legal policy at once.
+
+\subsection{Flow Order and Program Rules}
+
+We write $L_1 \sqsubseteq L_2$ when information is allowed to flow from label $L_1$ to $L_2$, respecting both confidentiality and integrity components.
+
+Core program rules used by the server checker:
 \[
-\frac{\Gamma \vdash e_1 : \tau_1 \qquad \Gamma \vdash e_2 : \tau_2}{\Gamma \vdash e_1 \oplus e_2 : \tau_1 \sqcup \tau_2}
+\frac{\Gamma \vdash e : L_e \qquad pc \sqcup L_e \sqsubseteq \Gamma(x)}{\Gamma,pc \vdash x := e}
 \]
-The join reflects that combined expressions depend on both inputs.
 
-For assignments:
-\[
-\frac{\Gamma \vdash e : \tau_e \qquad \tau_e \sqsubseteq \tau_x}{\Gamma \vdash x := e}
-\]
-This is the primary explicit-flow barrier. A violation is not a policy warning; it is a static rejection.
+and for conditionals, $pc$ is raised with the label of the guard expression. This blocks both explicit and implicit leaks.
 
-For conditionals with program counter $pc$:
-\[
-\text{required: } (pc \sqcup \tau_e) \sqsubseteq \tau_x
-\]
-This blocks implicit flows where branch structure reveals secrets.
+\subsection{Why White-Box Programs}
 
-\subsection{Design Decisions and Security Effects}
+Users upload source code plus declared argument labels. The server performs static checking before execution.
 
-\textbf{Decision D1: Type-check before execution}.\
-Reason: if a malicious program runs first, leakage may be irreversible.\
-Effect: unsafe code never executes, satisfying G1 by construction.
-
-\textbf{Decision D2: Keep authorization and typing separate}.\
-Reason: access control answers \emph{who may request}; typing answers \emph{what information may influence what}.\
-Effect: protects against both external access violations and insider exfiltration code.
-
-\textbf{Decision D3: Use TLS-style secure channels for transport}.\
-Reason: without authenticated confidential channels, attacker can read or alter traffic regardless of internal typing.
-Effect: supports G1 and G3 in transit, while typing enforces them in computation.
-
-\textbf{Decision D4: Declassification is explicit and narrowly scoped}.\
-Reason: practical systems require release of useful low-level aggregates.
-Effect: every High $\rightarrow$ Low release is intentional, reviewable, and auditable (G4).
-
-\subsection{Why Specific Attacks Are Prevented}
-
-\textbf{Attack A1: Direct exfiltration}. Attempt: assign private field to public output.\
-Blocked because assignment requires High $\sqsubseteq$ Low, which is false.
-
-\textbf{Attack A2: Branch leak}. Attempt: branch on secret and write branch-dependent value to Low variable.\
-Blocked because $pc=\text{High}$ in the branch; then $(pc\sqcup\text{Low})\sqsubseteq\text{Low}$ fails.
-
-\textbf{Attack A3: Network tampering/replay}. Attempt: modify or replay command messages.\
-Blocked at channel layer by integrity/authentication checks, provided endpoint keys and certificate validation are correct.
-
-\textbf{Attack A4: "Legitimate" statistical leak}. Attempt: query repeatedly until individual values can be inferred.\
-Mitigated by approved declassification transforms and privacy budget constraints (Chapter 6), not by base typing alone.
-
-\subsection{Limitations and Honest Boundaries}
-
-The argument intentionally does not claim protection against:
+Reasoning:
 \begin{itemize}
-    \item compromised trusted server code,
-    \item covert channels outside the model (hardware timing, cache state),
-    \item misuse of declassification policy if governance is weak.
+    \item black-box code cannot be analyzed for illegal internal flows,
+    \item rejecting unsafe code before runtime is stronger than post-hoc monitoring,
+    \item the resulting guarantee is compositional with API-level checks.
 \end{itemize}
 
-Stating these limits strengthens correctness of claims and keeps the proof obligations aligned with the course framework.
+\subsection{Declassification Design Choice}
+
+Declassification is only allowed in trusted server transformations, not in arbitrary user code. Each declassification requires:
+\begin{itemize}
+    \item explicit target policy,
+    \item proof that caller has required authority for each relaxed owner policy,
+    \item transform-specific constraints (for example minimum cohort size),
+    \item immutable audit logging.
+\end{itemize}
+
+This follows the Myers-Liskov idea that confidentiality relaxation must be explicit and authority-controlled.
+
+\subsection{Attack-Driven Justification}
+
+\textbf{A1: direct copy leak}.\
+Blocked by assignment rule when destination confidentiality would allow extra readers.
+
+\textbf{A2: implicit control leak}.\
+Blocked because $pc$ joins into assignments in guarded code.
+
+\textbf{A3: integrity poisoning}.\
+Blocked because flows into high-integrity destinations require sufficiently trusted sources.
+
+\textbf{A4: unauthorized downgrade}.\
+Blocked because \texttt{DECLASSIFY\_AND\_RELEASE} requires authority checks and policy validation.
+
+\subsection{Boundaries of the Argument}
+
+Our proof obligations do not cover compromised trusted server code or covert channels outside the language and API model. Stating this boundary keeps claims accurate and grade-relevant.
 

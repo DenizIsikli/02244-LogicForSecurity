@@ -1,78 +1,79 @@
 \section{Server API and Security Semantics}
 
-This chapter specifies each command as a security-relevant transition. The purpose is to show not only what the API does, but why each operation preserves the goals from Chapter 2.
+Each API command is specified as a typed transition with explicit checks. The API assumes authenticated TLS sessions as stated in the project description.
 
-\subsection{Command-Level Contract Format}
+\subsection{Data Types}
 
-For each command we define:
+We use:
 \begin{itemize}
-    \item \textbf{Preconditions}: authentication, authorization, typing assumptions.
-    \item \textbf{Transition}: state updates and generated objects.
-    \item \textbf{Postconditions}: confidentiality/integrity properties preserved.
+    \item \texttt{Principal}: actor in $\mathcal{A}$,
+    \item \texttt{ConfLabel}: conjunction of policies $(o:r)$,
+    \item \texttt{IntegLabel}: conjunction of policies $(o \leftarrow w)$,
+    \item \texttt{Label}: pair $(C,I)$,
+    \item \texttt{DataId}, \texttt{ProgramId}: server-generated identifiers.
 \end{itemize}
 
-\subsection{Data and Access Commands}
+For each command, response is either success value or \texttt{error(code,msg)}.
 
-\textbf{UPLOAD}$(u, d, \ell)$
+\subsection{Command List}
+
+\textbf{1) UPLOAD}$(token, payload:bytes, C:ConfLabel, I:IntegLabel, meta)$
 \begin{itemize}
-    \item Preconditions: user $u$ authenticated; label $\ell \in \{\text{Low, Medium, High}\}$.
-    \item Transition: store object $o=(owner=u, data=d, label=\ell)$.
-    \item Postcondition: object enters the lattice at a declared level; no downgrade occurs.
+    \item Checks: token valid; label syntax valid; actor names valid.
+    \item Effect: create object with label $(C,I)$ and owner as uploader.
+    \item Response: \texttt{ok(dataId)}.
 \end{itemize}
 
-\textbf{READ}$(u, o)$
+\textbf{2) READ\_DATA}$(token, dataId)$
 \begin{itemize}
-    \item Preconditions: access policy allows $u$ for $o.label$.
-    \item Transition: return value with same type as $o.label$.
-    \item Postcondition: read is type-preserving; confidentiality depends on access policy correctness and authenticated channel delivery.
+    \item Checks: requester is allowed by confidentiality component of object label.
+    \item Effect: no state change.
+    \item Response: \texttt{ok(payload,label,meta)}.
 \end{itemize}
 
-\textbf{WRITE}$(u, o, d')$
+\textbf{3) WRITE\_DATA}$(token, dataId, payload')$
 \begin{itemize}
-    \item Preconditions: write authorization for $u$ and object $o$.
-    \item Transition: update object content with integrity checks.
-    \item Postcondition: no low-integrity principal can silently overwrite high-integrity state (goal G3).
+    \item Checks: requester allowed by integrity policy; update preserves label constraints.
+    \item Effect: replace payload, preserve or tighten label.
+    \item Response: \texttt{ok(version)}.
 \end{itemize}
 
-\subsection{Computation Command}
+\textbf{4) UPLOAD\_PROGRAM}$(token, src, signature)$
+\begin{itemize}
+    \item Checks: source parses; every variable has label annotation or inferable label; checker validates flow rules under Myers-Liskov style lattice order.
+    \item Effect: store typed IR and interface constraints.
+    \item Response: \texttt{ok(programId, inferredInterface)} or \texttt{error(type\_error,...)}.
+\end{itemize}
 
-\textbf{RUN\_PROGRAM}$(u, P, inputs, requested\_label)$
+\textbf{5) RUN\_PROGRAM}$(token, programId, inputIds, outC:ConfLabel, outI:IntegLabel)$
 \begin{enumerate}
-    \item Resolve each input object to type $\tau_i$ from its label.
-    \item Type-check $P$ under environment $\Gamma = \{x_i : \tau_i\}$.
-    \item If typing fails, reject with no execution and no output.
-    \item If typing succeeds, infer output type $\tau_{out}$.
-    \item Store output only with label compatible with $\tau_{out}$.
+    \item Resolve input labels from stored objects.
+    \item Verify call matches program interface and pre-checked constraints.
+    \item Compute required output lower bound label $L_{req}$.
+    \item Accept only if $L_{req} \sqsubseteq (outC,outI)$.
+    \item Execute and store output with label $(outC,outI)$.
 \end{enumerate}
+Response: \texttt{ok(resultDataId)} or \texttt{error(flow\_violation,...)}.
 
-Security rationale:
+\textbf{6) DECLASSIFY\_AND\_RELEASE}$(token, dataId, transform, params, targetC)$
 \begin{itemize}
-    \item Prevents explicit and implicit leaks before runtime.
-    \item Prevents users from requesting an output label lower than inferred security type.
-    \item Makes security failure observable and auditable at submission time.
+    \item Checks: transform in trusted whitelist; params satisfy policy; caller has authority for each owner policy relaxed from source $C$ to $targetC$.
+    \item Effect: run trusted transform, produce new object with confidentiality $targetC$ and policy-defined integrity.
+    \item Response: \texttt{ok(releasedDataId)}.
 \end{itemize}
 
-\subsection{Declassification Command}
-
-\textbf{RELABEL}$(u, o, \ell_{new}, T)$ where $T$ is a transformation descriptor.
-
-Downgrade ($\ell_{new} \sqsubset o.label$) is accepted \emph{only if}:
+\textbf{7) AUDIT\_QUERY}$(token, filter)$
 \begin{itemize}
-    \item caller has declassification privilege,
-    \item $T$ is in approved transform set,
-    \item transform parameters satisfy policy constraints (for example minimum group size, privacy budget),
-    \item operation is logged with justification metadata.
+    \item Checks: requester is admin or owner-authorized auditor.
+    \item Effect: no state change.
+    \item Response: \texttt{ok(entries)} where entries include caller, time, source label, target label, authority proof reference, and transform id.
 \end{itemize}
 
-Without these checks, RELABEL would be a generic High $\rightarrow$ Low escape and break G1.
+\subsection{Why This API Is Secure by Construction}
 
-\subsection{Why This API Structure Matters}
-
-A recurring failure mode in protocol/system reports is to treat API commands as neutral operations. Here, each command is a proof obligation:
+The interface intentionally separates concerns:
 \begin{itemize}
-    \item \textbf{UPLOAD/READ/WRITE} enforce baseline policy consistency,
-    \item \textbf{RUN\_PROGRAM} enforces non-interference for untrusted code,
-    \item \textbf{RELABEL} localizes all sanctioned downgrades.
+    \item data commands enforce reader/writer policies on stored objects,
+    \item program commands enforce static flow safety before execution,
+    \item declassification command centralizes all confidentiality relaxation under explicit authority.
 \end{itemize}
-
-This separation is what lets us reason compositionally in the next chapter: if each command preserves an invariant, command traces preserve global security goals.

@@ -1,16 +1,36 @@
-\section{Conclusion}
+\section{Authorship and Contributions}
 
-This report presents a security argument that is explicit about assumptions, mechanisms, and limits. The Volpano type system provides static enforcement against unauthorized information flow, while API-level checks and channel assumptions provide the operational context needed for end-to-end reasoning.
+This report is partitioned so each major part has a primary author responsible for writing and technical correctness.
 
-For the hospital scenario, the main result is: private medical data is protected against both direct and control-flow-based leaks from untrusted programs, and any release to lower levels must go through a justified declassification step with policy constraints and auditability.
-
-Key advantages of this design:
+\subsection*{Deniz Isikli (s215818)}
+Primary author of:
 \begin{itemize}
-    \item security properties are checked before execution,
-    \item unsafe programs are rejected instead of partially executed,
-    \item confidentiality claims are tied to explicit attacker/channel assumptions,
-    \item declassification is controlled, parameterized, and accountable.
+    \item Chapter 1 (Introduction),
+    \item Chapter 3 (Design Choices and Information-Flow Argument),
+    \item editing integration across chapters for model consistency.
 \end{itemize}
 
-Residual risks outside the proven model (for example server compromise or covert hardware channels) are documented rather than ignored. This keeps the final claim precise: strong information-flow guarantees hold under the stated assumptions and enforcement path.
+\subsection*{Benas Skripkiunas (s253140)}
+Primary author of:
+\begin{itemize}
+    \item Chapter 2 (Participants, Roles, and Assumptions),
+    \item Chapter 4 (Server API and Security Semantics),
+    \item formal command signatures and error-model definitions.
+\end{itemize}
+
+\subsection*{Abid Hasan (s252729)}
+Primary author of:
+\begin{itemize}
+    \item Chapter 5 (Security Analysis of API Commands),
+    \item Chapter 6 (Declassification Justification),
+    \item threat-case analysis and proof-sketch refinement.
+\end{itemize}
+
+\subsection*{Joint Work}
+All members jointly reviewed:
+\begin{itemize}
+    \item final consistency of labels and notation,
+    \item bibliography/resources,
+    \item final wording of security claims and stated limitations.
+\end{itemize}
 

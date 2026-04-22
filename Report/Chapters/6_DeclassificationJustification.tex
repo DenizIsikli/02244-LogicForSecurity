@@ -1,18 +1,31 @@
 \section{Declassification Justification and Policy Constraints}
 
-Strict non-interference disallows all High $\rightarrow$ Low flows. Real deployments still need controlled release (for example research statistics). Therefore declassification is treated as a privileged and auditable exception, not a normal operation.
+In the decentralized model, strict confidentiality forbids many practically needed releases. Declassification is therefore necessary, but only under explicit authority and explicit target policy \cite{MyersLiskov97}.
 
-\subsection{Security Rule for Declassification}
+\subsection{Authority-Based Declassification Rule}
 
-A downgrade is accepted only as:
+We use the following principle in server checks:
 \[
-\frac{\text{approved}(T) \land \text{params\_valid}(T,\theta) \land \text{authorized}(u)}
-   {\Gamma \vdash \text{declassify}_{T,\theta}(h\!:\!\text{High}) : \text{Low}}
+\frac{\text{authority}(p) \land \text{approved}(T,\theta) \land C_{to} \text{ is justified}}
+  {\Gamma \vdash \text{declassify}_{p,T,\theta}(e):(C_{to}, I_{to})}
 \]
 
-Interpretation: changing the label is permitted only when transformation type, parameters, and caller privileges all satisfy policy.
+where authority$(p)$ must cover each owner policy relaxed from source confidentiality to target confidentiality.
 
-\subsection{Approved Transformation Families}
+This prevents users from widening readers for data they do not control.
+
+\subsection{What Is Declassified in Our System}
+
+We only declassify from clinical-use labels to research-use labels after a trusted transformation pipeline.
+
+Example confidentiality change (same owner):
+\[
+\{hospital:\{hospital,doctor\}\} \Rightarrow \{hospital:\{hospital,doctor,researcher\}\}
+\]
+
+This is permitted only through \texttt{DECLASSIFY\_AND\_RELEASE}, never by ordinary write/relabel operations.
+
+\subsection{Approved Transform Families}
 
 \textbf{Redaction}. Remove fields that directly identify persons (name, id, address).\
 Why it helps: it removes direct identifiers, reducing straightforward linkage attacks.
@@ -38,6 +51,17 @@ To avoid superficial "approved transform" claims, the policy must define concret
 
 These constraints are as important as the transform itself. A weak parameter choice can nullify theoretical guarantees.
 
+\subsection{Why This Is Compatible with Myers-Liskov}
+
+Our design follows the paper's declassification philosophy in three ways:
+\begin{itemize}
+  \item declassification is explicit and local (single API command),
+  \item declassification requires authority to relax owner policies,
+  \item declassified result receives a new explicit label and is auditable.
+\end{itemize}
+
+We do \emph{not} allow hidden, implicit, or user-defined declassification semantics.
+
 \subsection{Threat-Oriented Justification}
 
 We justify declassification against likely attacker strategies:
@@ -58,17 +82,18 @@ Mitigations are policy-coupled:
 
 If outputs $O_1,\ldots,O_n$ are released under approved declassification steps, risk composes across releases. Therefore privacy budgets and audit trails are maintained per dataset and per requester, not per request in isolation.
 
-This is the practical bridge between theory and operation: even individually safe releases can become unsafe in combination.
+This is the practical bridge between theory and operation: each release is checked locally, while cumulative risk is controlled globally.
 
 \subsection{Hospital Scenario Example}
 
 Pipeline for research release:
 \begin{enumerate}
-  \item redact direct identifiers,
-  \item enforce age-range grouping with $k$-minimum cohort size,
-  \item release aggregates only,
-  \item apply differential privacy with bounded $\epsilon$,
-  \item record approval and privacy-budget consumption in audit log.
+  \item ingest patient dataset with restrictive clinical label,
+  \item run trusted redaction and aggregation transform,
+  \item verify authority of requester for each relaxed owner policy,
+  \item enforce parameter checks ($k$, $\epsilon$, allowed query type),
+  \item store released dataset with explicit research label,
+  \item log event with actor, source label, target label, and justification id.
 \end{enumerate}
 
 Why this is acceptable: each step addresses a concrete attack path, and no step alone is treated as sufficient. This layered reasoning is stronger than claiming "anonymized therefore safe."
