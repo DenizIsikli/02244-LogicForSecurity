@@ -30,41 +30,168 @@ This ensures both explicit and implicit dependencies are legal flows under decen
 
 \subsection{Command-by-Command Preservation Arguments}
 
-\textbf{UPLOAD preserves I1}. Labels are parsed and validated before object creation. Invalid labels are rejected.
+We argue that each command maintains the global flow invariants. This argument is crucial: it allows us to conclude that any sequence of commands, if each is individually checked and accepted, will be collectively safe.
 
-\textbf{READ\_DATA preserves I2}. Server returns data only if requester is in the allowed reader sets implied by confidentiality policies. Otherwise request fails without data release.
+\textbf{UPLOAD preserves I1 (Label Validity).} When UPLOAD is called, the server parses the confidentiality and integrity labels supplied by the user. The parser checks that:
+\begin{itemize}
+    \item each policy is well-formed (owner name is in $\mathcal{A}$, reader/writer set is a subset of $\mathcal{A}$),
+    \item no two policies for the same owner appear (e.g., no duplicate $(patient:r_1)$ and $(patient:r_2)$).
+\end{itemize}
+If parsing succeeds, the label is valid. If parsing fails, UPLOAD rejects the call and returns an error. In either case, no invalid label is ever stored. Thus, I1 is preserved.
 
-\textbf{WRITE\_DATA preserves I3}. Server checks writer trust constraints before mutation. Unauthorized writers cannot modify protected objects.
+\textbf{READ\_DATA preserves I2 (Read Safety).} READ\_DATA is called with a $dataId$. The server looks up the object and retrieves its label $(C, I)$. It then checks:
+\begin{itemize}
+    \item for each policy $(o:r) \in C$, is the authenticated caller $p$ in $r$?
+\end{itemize}
+If all checks pass, the data is returned. If any check fails, the call returns an error and no data is revealed. Before UPLOAD, I1 is satisfied: all labels are valid. After READ\_DATA, either the data is not returned (and I2 is trivially satisfied) or it is returned only to authorized readers (and I2 is satisfied). Thus, I2 is preserved.
 
-\textbf{UPLOAD\_PROGRAM preserves I4}. Unsafe source code is rejected at check time; no executable artifact is installed.
+\textbf{WRITE\_DATA preserves I3 (Write Safety).} WRITE\_DATA is called with $dataId$ and new $payload'$. The server checks:
+\begin{itemize}
+    \item for each integrity policy $(o \leftarrow w) \in I$, is the caller $p$ in $w$?
+\end{itemize}
+If all checks pass, the payload is updated. If any check fails, an error is returned. This ensures that only trusted writers can modify each owner's data. I3 is preserved.
 
-\textbf{RUN\_PROGRAM preserves I4}. Call-time label constraints are checked against inferred interface and required output label lower bound; execution occurs only when constraints hold.
+\textbf{UPLOAD\_PROGRAM preserves I4 (Program Safety).} When UPLOAD\_PROGRAM is called, the server applies three checks in sequence:
+\begin{enumerate}
+    \item \textbf{Syntactic validity}: does the source parse as a valid program? If not, reject.
+    \item \textbf{Type annotation}: can every variable be assigned a label (either explicitly annotated or inferred from context)? If not, reject.
+    \item \textbf{Flow safety}: for every assignment and branch in the source, does the flow rule hold (see Chapter 3)? If not, reject and report the violating line.
+\end{enumerate}
+Each check is sound: parsing rejects syntactically invalid programs, type inference rejects programs with ambiguous labels, and flow checking rejects programs with illegal flows. If all checks pass, the program is provably flow-safe. No flow-unsafe program is ever stored in the server. I4 is preserved.
 
-\textbf{DECLASSIFY\_AND\_RELEASE preserves I5}. The command checks authority over every relaxed owner policy and enforces transform-specific restrictions. Without authority proof, no downgrade happens.
+\textbf{RUN\_PROGRAM preserves I4 (Call-Time Safety).} RUN\_PROGRAM is called with a $programId$ (which identifies a previously uploaded and flow-checked program), input $dataIds$, and desired output label $(outC, outI)$. The server:
+\begin{enumerate}
+    \item retrieves the stored program and its inferred interface,
+    \item looks up input objects and their labels,
+    \item computes the label lower bound $L_{req} = L_1 \sqcup \cdots \sqcup L_n$,
+    \item checks: is $L_{req} \sqsubseteq (outC, outI)$?
+\end{enumerate}
+If the check passes, the program is executed with a runtime system that respects labeled data and labeled memory cells. Because the program was flow-checked at upload time, and the output label is high enough ($L_{req} \sqsubseteq (outC, outI)$), the output information is safe to store at the requested label. Thus, I4 is preserved.
 
-\textbf{AUDIT\_QUERY supports I5 accountability}. Every declassification event is queryable by authorized auditors, enabling post hoc verification of policy compliance.
+\textbf{DECLASSIFY\_AND\_RELEASE preserves I5 (Declassification Safety).} This command is the most complex. The server:
+\begin{enumerate}
+    \item checks that the transform is approved,
+    \item validates transform parameters against policy constraints,
+    \item for each owner whose policy is relaxed (i.e., reader set increases), checks that the caller has authority,
+    \item applies the transform and creates a new object with the target label,
+    \item writes an audit entry.
+\end{enumerate}
+Each check is a gate: if any check fails, no declassification occurs. If all checks pass, the declassification is authorized, the transform is trusted to be privacy-preserving (by design of the server's implementation), and the operation is auditable. I5 is preserved.
+
+\textbf{AUDIT\_QUERY does not modify state} and thus trivially preserves all invariants. It is read-only and only returns information to authorized auditors.
 
 \subsection{Representative Illegal Flows and Blocking Point}
 
-\textbf{Case A: explicit read-down in user code.}
-Blocked during \texttt{UPLOAD\_PROGRAM} static checking.
+We present four realistic attack attempts and show where each is blocked:
 
-\textbf{Case B: implicit leak via branch on secret.}
-Blocked by $pc$-aware assignment check.
+\textbf{Case A: Explicit Read-Down Leak in User Code.} A researcher uploads a program:
+\begin{verbatim}
+  secret : (hospital:patients-only)
+  public : (hospital:public-readable)
+  ...
+  public := secret
+\end{verbatim}
 
-\textbf{Case C: unauthorized data overwrite by low-trust principal.}
-Blocked by \texttt{WRITE\_DATA} integrity-policy check.
+The type checker verifies: $(hospital:\{patients\_only\}) \sqsubseteq (hospital:\{public\_readable\})$?
 
-\textbf{Case D: direct relabel to wider reader set without authority.}
-Blocked by \texttt{DECLASSIFY\_AND\_RELEASE} authority check.
+This requires $\{patients\_only\} \supseteq \{public\_readable\}$, which is false (the researcher is in $public\_readable$ but not in $patients\_only$). The flow check fails. UPLOAD\_PROGRAM rejects the code with a flow error. \textbf{Blocked at upload-time type checking.}
+
+\textbf{Case B: Implicit Leak via Control Dependency.} A doctor attempts:
+\begin{verbatim}
+  diagnosis : (doctor:doctor-only)
+  audit_log : (hospital:all-staff)
+  ...
+  if (diagnosis == CANCER) then
+    audit_log := 1
+  else
+    audit_log := 0
+\end{verbatim}
+
+Inside the then-branch, $pc$ is set to $pc \sqcup L_{diagnosis} = (doctor:\{doctor\})$. The assignment check requires $(doctor:\{doctor\}) \sqsubseteq (hospital:\{all\_staff\})$. This fails because the doctor is not necessarily in $all\_staff$, or because the confidentiality components are from different owners (doctor vs. hospital). The assignment is rejected. \textbf{Blocked at upload-time type checking.}
+
+\textbf{Case C: Integrity Poisoning via Untrusted Input.} A researcher with low write authority attempts to run a program that modifies patient data with result to be stored with high-integrity label $(doctor \leftarrow \{doctor,hospital\})$:
+
+RUN\_PROGRAM is called with:
+\begin{itemize}
+    \item input from researcher's low-integrity data: $L_{input} = (doctor \leftarrow \{researcher,hospital\})$,
+    \item desired output label: $L_{out} = (doctor \leftarrow \{doctor,hospital\})$.
+\end{itemize}
+
+The check is: $L_{input} \sqsubseteq L_{out}$?
+
+For integrity, this requires: for each $(o \leftarrow w_{out}) \in L_{out}$, there exists $(o \leftarrow w_{in}) \in L_{input}$ with $w_{in} \supseteq w_{out}$.
+
+For $(doctor \leftarrow \{doctor,hospital\}) \in L_{out}$, we need $(doctor \leftarrow w) \in L_{input}$ with $w \supseteq \{doctor,hospital\}$. But $L_{input}$ has $(doctor \leftarrow \{researcher,hospital\})$ and $\{researcher,hospital\} \not\supseteq \{doctor,hospital\}$ (researcher is not trusted by the doctor). The check fails. \textbf{Blocked at run-time label check.}
+
+\textbf{Case D: Unauthorized Downgrade via Declassification.} A hospital staff member (not a patient) attempts to declassify patient data from $(patient:\{patient\})$ to $(patient:\{researcher\})$:
+
+DECLASSIFY\_AND\_RELEASE is called with:
+\begin{itemize}
+    \item source label: $(patient:\{patient\})$,
+    \item target label: $(patient:\{researcher\})$,
+    \item caller: $staff$ (not the patient).
+\end{itemize}
+
+The authority check: does the caller ($staff$) have authority from the patient to add researcher to the reader set?
+
+This requires the caller to present a delegation or authorization token from the patient. If the caller is not the patient and has no such token, the authorization check fails. DECLASSIFY\_AND\_RELEASE rejects the call. \textbf{Blocked by authority check.}
 
 \subsection{Trace-Level Theorem}
 
-\textbf{Theorem (API Trace Security under Assumptions).}
-Assume secure authenticated transport, trusted server enforcement code, and correct implementation of command checks specified in Chapter 4. Then any trace of accepted API calls preserves invariants I1--I5 and cannot produce illegal confidentiality or integrity flows except those explicitly permitted by authority-checked declassification.
+\textbf{Theorem (API Trace Security under Stated Assumptions).}
+Assume:
+\begin{enumerate}
+    \item the secure authenticated transport layer (TLS with client and server authentication) is correctly implemented and prevents network-level adversaries from modifying commands or eavesdropping,
+    \item the server's trusted enforcement code (the UPLOAD, READ, WRITE, UPLOAD\_PROGRAM, RUN\_PROGRAM, DECLASSIFY\_AND\_RELEASE, and AUDIT\_QUERY implementations) correctly execute the specified checks,
+    \item user programs that have passed UPLOAD\_PROGRAM checking are executed in a runtime system that respects labeled data (i.e., does not perform implicit flows outside the labeled computation model).
+\end{enumerate}
 
-\textbf{Proof sketch.}
-By induction over trace length. Base case: empty trace satisfies invariants vacuously. Inductive step: each command preserves invariants as shown above. Therefore all finite traces preserve them.
+Then for any finite sequence (trace) of API calls that are all accepted by the server:
+\begin{enumerate}
+    \item all stored objects have valid labels satisfying I1,
+    \item all data accessed via READ\_DATA respects confidentiality policies,
+    \item all data modified via WRITE\_DATA respects integrity policies,
+    \item all user programs executed via RUN\_PROGRAM have flow-safe interfaces matching their input and output labels,
+    \item all declassifications performed via DECLASSIFY\_AND\_RELEASE are authority-checked and auditable,
+\end{enumerate}
+
+and the trace collectively preserves invariants I1--I5 with no illegal confidentiality or integrity flows except those explicitly permitted by authority-checked declassifications.
+
+\textbf{Proof Sketch.}
+By strong induction on trace length. 
+
+\emph{Base case}: An empty trace trivially satisfies all invariants (no operations, no violations).
+
+\emph{Inductive step}: Assume the trace $\tau = c_1, \ldots, c_n$ of $n$ commands satisfies invariants I1--I5. We show that appending a new command $c_{n+1}$ preserves the invariants.
+
+For each command type:
+\begin{itemize}
+    \item If $c_{n+1}$ is UPLOAD, I1 is preserved because label parsing and validation gate the command (shown above).
+    \item If $c_{n+1}$ is READ\_DATA, I2 is preserved because the access control check gates the command.
+    \item If $c_{n+1}$ is WRITE\_DATA, I3 is preserved because the integrity check gates the command.
+    \item If $c_{n+1}$ is UPLOAD\_PROGRAM, I4 is preserved because type and flow checking gate the command.
+    \item If $c_{n+1}$ is RUN\_PROGRAM, I4 is preserved because the label check gates the command.
+    \item If $c_{n+1}$ is DECLASSIFY\_AND\_RELEASE, I5 is preserved because authority checking gates the command.
+    \item If $c_{n+1}$ is AUDIT\_QUERY, no modification occurs, so invariants are unchanged.
+\end{itemize}
+
+By induction, any accepted trace satisfies all invariants. \qed
+
+\textbf{Corollary: Non-Interference (Confidentiality).}
+Consider two traces $\tau$ and $\tau'$ that differ only in the values of data objects labeled with owner $o$'s confidentiality policies. Let $P$ be a set of principals (readers) not including $o$. Then the sequence of responses and errors returned to $P$ along both traces is identical.
+
+\emph{Intuition}: Principals not authorized by owner $o$ cannot observe differences in $o$'s protected data, because READ and DECLASSIFY both check authorization before revealing data.
+
+\textbf{Limitations.}
+The theorem does not cover:
+\begin{itemize}
+    \item compromised, malicious, or buggy server runtime or enforcement code,
+    \item covert channels outside the labeled computation model (e.g., timing of responses, power consumption, acoustic noise),
+    \item social engineering or the attacker forging authority credentials,
+    \item misuse of legitimate authority by honest-but-curious insiders (the theorem prevents \emph{technical} leaks, but not intentional misuse of authorized operations).
+\end{itemize}
+
+These limitations are inherent to any formal security argument and do not diminish the value of the theorem in the specified threat model.
 
 \subsection{Limitations}
 

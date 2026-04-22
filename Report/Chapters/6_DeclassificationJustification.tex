@@ -25,19 +25,44 @@ Example confidentiality change (same owner):
 
 This is permitted only through \texttt{DECLASSIFY\_AND\_RELEASE}, never by ordinary write/relabel operations.
 
-\subsection{Approved Transform Families}
+\subsection{Approved Transform Families and Privacy Accounting}
 
-\textbf{Redaction}. Remove fields that directly identify persons (name, id, address).\
-Why it helps: it removes direct identifiers, reducing straightforward linkage attacks.
+Each transform is approved only if it is both theoretically justified and implemented correctly. We describe each with formal privacy guarantees where applicable:
 
-\textbf{Aggregation}. Release only group-level summaries.\
-Why it helps: individuals are hidden inside population-level values; direct record reconstruction becomes harder.
+\textbf{Redaction.} Remove fields that directly identify persons (name, id, address). The transform deletes columns or blanks out values that are quasi-identifiers or directly identifying attributes.
 
-\textbf{$k$-anonymization}. Enforce equivalence classes of size at least $k$.\
-Why it helps: bounds single-record uniqueness under quasi-identifiers; policy can require minimum $k$ before release.
+\emph{Why it helps:} Redaction removes the most obvious linkage surface. An attacker who wants to link released records to external datasets must rely on quasi-identifiers (age, gender, zip code) instead of perfect identifiers (name, SSN). This increases the attacker's work and risk of failure.
 
-\textbf{Differential privacy}. Add calibrated noise to query results.\
-Why it helps: limits how much any one person changes released output; supports formal privacy accounting through budget parameter $\epsilon$.
+\emph{Privacy accounting:} Redaction is a preprocessing step that reduces the identifier space but does not add noise. It should be combined with aggregation or $k$-anonymity for formal privacy. Redaction alone is a \emph{heuristic} defense, not a formal guarantee.
+
+\textbf{Aggregation.} Release only group-level summaries (e.g., mean age, count by condition) instead of individual records. The transform groups records and computes aggregate statistics.
+
+\emph{Why it helps:} Individuals are hidden inside population-level values. To reconstruct a single person's record from aggregate queries, an attacker must perform a reconstruction attack, which requires many carefully crafted queries and is limited by the allowed query class.
+
+\emph{Privacy accounting:} The privacy risk depends on the query class. If only mean and count are allowed, an attacker's options are limited. If arbitrary sum queries are allowed, an attacker can potentially reconstruct records using techniques like differential privacy attacks. Policy must restrict query classes to approved patterns.
+
+\textbf{$k$-Anonymization.} Enforce that every combination of quasi-identifier values (age, gender, zip code) appears in at least $k$ records before release. The transform clusters records into equivalence classes and suppresses or generalizes values until each class has at least $k$ members.
+
+\emph{Why it helps:} Bounds the uniqueness risk under quasi-identifiers. If a released record's quasi-identifier matches exactly $k$ people in the population, the attacker cannot identify which individual the record represents (best case) or narrows the candidate set to $k$ people (privacy risk $1/k$).
+
+\emph{Privacy accounting:} For fixed quasi-identifiers $QI$, $k$-anonymity provides a \textbf{worst-case privacy bound}: an attacker with only the quasi-identifiers has at most $1/k$ probability of correctly guessing any individual's sensitive attribute. This is measured as \emph{$k$-anonymity privacy}: $\text{Privacy}(QI, k) = 1/k$.
+
+\emph{Parameter choice:} For hospital data, $k \geq 5$ is typical minimum (ensures at least 5 records per class). For highly sensitive data (e.g., rare diseases), $k \geq 20$ or higher. Policy must enforce $k \geq k_{min}$ where $k_{min}$ is set according to the harm model (how sensitive is disclosure to $1/5$ vs. $1/20$ individuals).
+
+\textbf{Differential Privacy.} Add calibrated random noise to query results such that the output distribution is nearly unchanged whether any single individual's data is included or excluded.
+
+\emph{Why it helps:} Provides a formal, composable privacy guarantee. An attacker observing the query result cannot reliably determine whether the queried database contained any particular individual's record, even with arbitrary background knowledge.
+
+\emph{Privacy accounting:} Under $(\epsilon, \delta)$-differential privacy, for any two datasets $D$ and $D'$ differing by one record, and for any output set $S$:
+\[
+\mathbb{P}[\text{Mechanism}(D) \in S] \leq e^\epsilon \mathbb{P}[\text{Mechanism}(D') \in S] + \delta
+\]
+
+The parameter $\epsilon$ (epsilon) controls privacy: smaller $\epsilon$ means stronger privacy (outputs look more similar regardless of individual's presence). The parameter $\delta$ is the probability of a violation.
+
+\emph{Composition:} Differential privacy composes: if $k$ independent mechanisms each satisfy $(\epsilon_i, \delta_i)$-DP, their composition satisfies $(\sum_i \epsilon_i, k \delta_i)$-DP. This enables privacy budgeting: a hospital can allocate an $\epsilon$ budget per dataset (e.g., $\epsilon \leq 1.0$) and track consumption as queries are answered. Once $\epsilon$ is exhausted, no further queries are answered on that dataset.
+
+\emph{Parameter choice:} The choice of $\epsilon$ reflects the privacy-utility tradeoff. $\epsilon = 1.0$ (often written $\epsilon \leq \log(3)$) provides moderate privacy with acceptable utility. $\epsilon = 0.1$ provides strong privacy with noticeable noise. $\epsilon = 10$ provides weak privacy. Policy must enforce $\epsilon \leq \epsilon_{max}$ where $\epsilon_{max}$ is set to ensure total budget does not exceed total allocated privacy loss (e.g., per-hospital privacy budget of $\epsilon_{total} = 5.0$ with per-study allocations).
 
 \subsection{Policy Parameters (Concrete and Checkable)}
 
@@ -84,19 +109,54 @@ If outputs $O_1,\ldots,O_n$ are released under approved declassification steps, 
 
 This is the practical bridge between theory and operation: each release is checked locally, while cumulative risk is controlled globally.
 
-\subsection{Hospital Scenario Example}
+\subsection{Hospital Scenario Example: Multi-Step Privacy Pipeline}
 
-Pipeline for research release:
+Consider a hospital storing patient data with labels:
+\[
+L_{\text{clinical}} = (patient:\{hospital,doctor\}) \wedge (hospital:\{hospital\})
+\]
+
+A researcher requests access to a dataset for a retrospective study on treatment outcomes. The hospital initiates a controlled declassification pipeline:
+
 \begin{enumerate}
-  \item ingest patient dataset with restrictive clinical label,
-  \item run trusted redaction and aggregation transform,
-  \item verify authority of requester for each relaxed owner policy,
-  \item enforce parameter checks ($k$, $\epsilon$, allowed query type),
-  \item store released dataset with explicit research label,
-  \item log event with actor, source label, target label, and justification id.
+  \item \textbf{Ingest Phase.} The raw patient dataset is stored with label $L_{\text{clinical}}$. Only hospital staff and treating doctors can read.
+  
+  \item \textbf{Redaction Phase.} The server applies a trusted redaction transform: removes name, SSN, MRN, exact birth date. Keeps age (binned to 5-year intervals), gender, zip code, treatment codes, and outcomes.
+  
+  \item \textbf{Aggregation Phase.} Instead of releasing individual records, the server computes group statistics: ``Count of patients by age group, gender, and treatment, with mean outcome measure.'' Individual records are not released; only the aggregates are.
+  
+  \item \textbf{$k$-Anonymity Check.} The server verifies that for any combination of (age-group, gender, zip-code) appearing in the aggregates, at least $k = 5$ patients in the original dataset have that combination. If not, further generalization (e.g., remove zip code, group gender coarsely) is applied.
+  
+  \item \textbf{Authority Verification.} The hospital administrator (acting on the patient's authorization) verifies that the researcher is approved and the study has ethics approval. The researcher must have authority to relax the $(hospital:\{hospital\})$ policy to $(hospital:\{hospital,researcher\})$.
+  
+  \item \textbf{Parameter Enforcement.} The server checks: 
+    \begin{itemize}
+        \item $k \geq 5$ (satisfied by step 4),
+        \item $\epsilon \leq 0.5$ if differential privacy is applied (e.g., for query systems), or $\epsilon = \infty$ if only aggregates are released (no DP needed for fixed aggregates),
+        \item dataset version and timestamp recorded for audit trail.
+    \end{itemize}
+  
+  \item \textbf{Release.} The server creates a new object with aggregated data and label:
+  \[
+  L_{\text{research}} = (patient:\{hospital,doctor,researcher\}) \wedge (hospital:\{hospital,researcher\})
+  \]
+  
+  \item \textbf{Audit Logging.} An entry is recorded:
+  \[
+  (actor: \text{admin}, time: 2024\text{-}04\text{-}22, source\_dataId: 12345, target\_dataId: 12346, source\_label: L_{\text{clinical}}, target\_label: L_{\text{research}}, transform: \text{``redact+aggregate+k\text{-}anon''}, params: \{k=5\}, authority\_proof: \text{``ethics\_approval\_123''})
+  \]
 \end{enumerate}
 
-Why this is acceptable: each step addresses a concrete attack path, and no step alone is treated as sufficient. This layered reasoning is stronger than claiming "anonymized therefore safe."
+\textbf{Why This Is Acceptable.} Each step addresses a specific attack vector:
+\begin{itemize}
+    \item Redaction removes direct identifiers, raising the bar for linkage attacks.
+    \item Aggregation hides individuals in groups, preventing record-level leakage.
+    \item $k$-Anonymity ensures that even if an attacker links to external data, the candidate set is at least $k$ individuals, providing formal privacy bound $1/k$.
+    \item Authority verification ensures that only the patient (or their delegate) can authorize the release.
+    \item Audit logging allows retroactive verification: if a researcher misuses the data, the hospital can prove who approved the release and under what constraints.
+\end{itemize}
+
+No single step is sufficient (e.g., $k$-anonymity alone is not enough given background knowledge). But the combination is defensible: it combines theoretical privacy (formal $k$-anonymity guarantee) with practical safeguards (authority, audit, parameter enforcement).
 
 \subsection{Residual Risks}
 

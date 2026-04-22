@@ -1,24 +1,420 @@
 \section{Appendix}
 
-This appendix contains only supplementary material referenced by the main text.
+\subsection{Authorship and Contributions}
 
-\subsection{Supplementary Label-Check Pseudocode}
+This report is partitioned so each major part has a primary author responsible for writing and technical correctness.
 
-The server uses the following helper checks as part of command validation.
+\subsubsection*{Deniz Isikli (s215818)}
+Primary author of:
+\begin{itemize}
+    \item Chapter 3 (Design Choices and Information-Flow Argument),
+    \item Chapter 5 (Security Analysis of API Commands),
+\end{itemize}
+
+\subsubsection*{Benas Skripkiunas (s253140)}
+Primary author of:
+\begin{itemize}
+    \item Chapter 2 (Participants, Roles, and Assumptions),
+    \item Chapter 6 (Declassification Justification),
+\end{itemize}
+
+\subsubsection*{Abid Hasan (s252729)}
+Primary author of:
+\begin{itemize}
+    \item Chapter 1 (Introduction),
+    \item Chapter 4 (Server API and Security Semantics),
+\end{itemize}
+
+\subsection{Appendix A: Flow Checker Pseudocode}
+
+The server's type checker implements the following core operations, referenced in Chapters 3, 4, and 5.
+
+\subsubsection*{Flow Order Checking}
+
+The function \texttt{canFlow} checks whether information is allowed to flow from label $L_1$ to label $L_2$:
 
 \begin{verbatim}
-canRead(principal p, confLabel C):
-  for each policy (owner o : readers R) in C:
-    require p in closureActsFor(R)
-  return true
-
-canWrite(principal p, integLabel I):
-  for each policy (owner o <- writers W) in I:
-    require p in closureActsFor(W)
-  return true
-
 canFlow(label L1=(C1,I1), label L2=(C2,I2)):
-  return confFlow(C1,C2) and integFlow(I1,I2)
+  // Check confidentiality: for all (o:r1) in C1,
+  // must exist (o:r2) in C2 with r1 ⊇ r2
+  for each policy (o:r1) in C1:
+    found = false
+    for each policy (o:r2) in C2:
+      if r1 ⊇ r2:
+        found = true; break
+    if not found:
+      return false
+  
+  // Check integrity: for all (o <- w2) in I2,
+  // must exist (o <- w1) in I1 with w1 ⊇ w2
+  for each policy (o <- w2) in I2:
+    found = false
+    for each policy (o <- w1) in I1:
+      if w1 ⊇ w2:
+        found = true; break
+    if not found:
+      return false
+  
+  return true
 \end{verbatim}
 
-These checks are referenced in Chapters 4--6 when arguing command safety.
+\subsubsection*{Label Join (Least Upper Bound)}
+
+The function \texttt{join} computes the least upper bound of two labels (used when merging information from multiple sources):
+
+\begin{verbatim}
+join(label L1=(C1,I1), label L2=(C2,I2)):
+  // Confidentiality join: union of all (o:r) from both
+  // but when two policies for same owner exist,
+  // keep only the stricter (smaller reader set)
+  C_result = {}
+  for each owner o:
+    if (o:r1) in C1 and (o:r2) in C2:
+      C_result += (o:(r1 ∩ r2))  // intersection for conf
+    else if (o:r1) in C1:
+      C_result += (o:r1)
+    else if (o:r2) in C2:
+      C_result += (o:r2)
+  
+  // Integrity join: union all (o <- w) from both
+  // but when two policies for same owner exist,
+  // keep only the weaker (larger writer set)
+  I_result = {}
+  for each owner o:
+    if (o <- w1) in I1 and (o <- w2) in I2:
+      I_result += (o <- (w1 ∪ w2))  // union for integ
+    else if (o <- w1) in I1:
+      I_result += (o <- w1)
+    else if (o <- w2) in I2:
+      I_result += (o <- w2)
+  
+  return (C_result, I_result)
+\end{verbatim}
+
+\subsubsection*{Implicit Flow Handling}
+
+When type-checking a branch, the control-context label (program counter label $pc$) is updated:
+
+\begin{verbatim}
+check_assignment(env Gamma, label pc, 
+                 var x, expr e):
+  L_e = typeOf(Gamma, e)
+  L_target = Gamma(x)
+  
+  // Assignment allowed iff (pc ⊔ L_e) ⊆ L_target
+  if canFlow(join(pc, L_e), L_target):
+    return OK
+  else:
+    return ERROR("Flow violation on line ...; 
+                  type of e is too high, 
+                  x cannot hold it")
+
+check_if_branch(env Gamma, label pc,
+                expr guard, block B):
+  L_guard = typeOf(Gamma, guard)
+  pc_new = join(pc, L_guard)
+  
+  // Check body with raised pc
+  check_block(Gamma, pc_new, B)
+\end{verbatim}
+
+\subsection{Appendix B: Label Comparison Examples}
+
+Below are five concrete examples of flow checking, worked through by hand:
+
+\textbf{Example 1: Simple Confidentiality Flow}
+
+Source: $L_1 = (doctor:\{doctor,nurse\})$
+Destination: $L_2 = (doctor:\{nurse\})$
+
+Is $L_1 \sqsubseteq L_2$?
+
+\begin{itemize}
+    \item Confidentiality: $(doctor:\{doctor,nurse\})$ in $L_1$; $(doctor:\{nurse\})$ in $L_2$. Check: $\{doctor, nurse\} \supseteq \{nurse\}$? Yes.
+    \item Integrity: neither label has integrity policies.
+\end{itemize}
+
+Result: \textbf{Yes}, $L_1 \sqsubseteq L_2$. Information can flow.
+
+\textbf{Example 2: Integrity Constraint Blocks Assignment}
+
+Source: $L_1 = (hospital \leftarrow \{nurse\})$ (data only trusted from nurses)
+Destination: $L_2 = (hospital \leftarrow \{doctor\})$ (data must be trusted from doctors)
+
+Is $L_1 \sqsubseteq L_2$?
+
+\begin{itemize}
+    \item Confidentiality: neither has confidentiality policies.
+    \item Integrity: $L_2$ requires $(hospital \leftarrow \{doctor\})$. In $L_1$, we have $(hospital \leftarrow \{nurse\})$. Check: $\{nurse\} \supseteq \{doctor\}$? No.
+\end{itemize}
+
+Result: \textbf{No}, $L_1 \not\sqsubseteq L_2$. A nurse cannot modify data that must come from doctors only.
+
+\textbf{Example 3: Multi-Owner Confidentiality}
+
+Source: $L_1 = (patient:\{patient,doctor\}) \wedge (hospital:\{hospital,doctor\})$
+Destination: $L_2 = (patient:\{doctor\}) \wedge (hospital:\{hospital,doctor\})$
+
+Is $L_1 \sqsubseteq L_2$?
+
+\begin{itemize}
+    \item Patient policy: $(patient:\{patient,doctor\})$ in $L_1$; $(patient:\{doctor\})$ in $L_2$. Check: $\{patient,doctor\} \supseteq \{doctor\}$? Yes.
+    \item Hospital policy: $(hospital:\{hospital,doctor\})$ in $L_1$; $(hospital:\{hospital,doctor\})$ in $L_2$. Check: $\{hospital,doctor\} \supseteq \{hospital,doctor\}$? Yes.
+\end{itemize}
+
+Result: \textbf{Yes}, $L_1 \sqsubseteq L_2$. Data can flow because both owner policies satisfy the confidentiality order.
+
+\textbf{Example 4: Implicit Flow via PC Raise}
+
+Program counter: $pc = (secret:\{doctor\})$ (inside a branch guarded by secret data)
+Source: $L_e = \emptyset$ (a constant, no label)
+Target: $\Gamma(public) = (public:\{\})$ (public writable by anyone)
+
+Check: $pc \sqcup L_e \sqsubseteq L_{target}$?
+
+\begin{itemize}
+    \item $pc \sqcup L_e = (secret:\{doctor\})$ (the join is dominated by $pc$).
+    \item Is $(secret:\{doctor\}) \sqsubseteq (public:\{\})$? This requires: for $(secret:\{doctor\})$, there must be a policy $(secret:r')$ in the target with $\{doctor\} \supseteq r'$. But $L_{target}$ has no secret policy. 
+    \item The check fails.
+\end{itemize}
+
+Result: \textbf{No}, assignment is rejected. Implicit flow from secret to public is blocked.
+
+\textbf{Example 5: Join Operation}
+
+Label 1 (input A): $L_A = (owner:\{owner,user1\})$
+Label 2 (input B): $L_B = (owner:\{owner,user2\})$
+
+Compute $L_A \sqcup L_B$ (the join; output label must accommodate both inputs):
+
+\begin{itemize}
+    \item For owner in confidentiality: $r_A = \{owner, user1\}$ and $r_B = \{owner, user2\}$.
+    \item Join of readers: $r_A \cap r_B = \{owner\}$ (intersection for confidentiality; stricter is safer).
+    \item Result: $L_A \sqcup L_B = (owner:\{owner\})$.
+\end{itemize}
+
+Interpretation: An output that depends on both $A$ and $B$ cannot be labeled more permissively than both; the result has the tighter (more confidential) label.
+
+\subsection{Appendix C: Formal Myers-Liskov Label Semantics}
+
+This section restates the formal definitions underlying the system, referenced in Chapter 2.
+
+\subsubsection*{Label Semantics}
+
+Let $\mathcal{A}$ be a fixed set of principals (actors). A \emph{confidentiality policy} has the form $(o:r)$ where $o \in \mathcal{A}$ is an owner and $r \subseteq \mathcal{A}$ is a reader set. Intuitively, $(o:r)$ means owner $o$ declares that only principals in $r$ are permitted to read this data.
+
+A \emph{confidentiality label} is a conjunction of policies: $C = \bigwedge_i (o_i:r_i)$. For a principal $p$ to be authorized to read data with label $C$, $p$ must be in $r_i$ for all $i$. That is, $p$ must satisfy the constraints of all owners.
+
+An \emph{integrity policy} has the form $(o \leftarrow w)$ where $o \in \mathcal{A}$ is an owner and $w \subseteq \mathcal{A}$ is a writer set. Intuitively, $(o \leftarrow w)$ means owner $o$ trusts only principals in $w$ to modify this data.
+
+An \emph{integrity label} is a conjunction: $I = \bigwedge_j (o_j \leftarrow w_j)$. For a principal $p$ to be authorized to write, $p$ must be in $w_j$ for all $j$.
+
+A \emph{security label} is a pair $L = (C, I)$ of a confidentiality label and an integrity label.
+
+\subsubsection*{Information Flow Order}
+
+The information-flow order is defined as:
+
+\[
+L_1=(C_1,I_1) \sqsubseteq L_2=(C_2,I_2) \quad \Leftrightarrow
+\]
+
+\begin{enumerate}
+\item For each policy $(o:r_1) \in C_1$, there exists a policy $(o:r_2) \in C_2$ such that $r_1 \supseteq r_2$ (confidentiality can only become stricter).
+
+\item For each policy $(o \leftarrow w_2) \in I_2$, there exists a policy $(o \leftarrow w_1) \in I_1$ such that $w_1 \supseteq w_2$ (integrity can only become more stringent).
+\end{enumerate}
+
+The relation is a partial order (reflexive, transitive, antisymmetric).
+
+\subsubsection*{Least Upper Bound (Join)}
+
+The join operation computes the least upper bound under $\sqsubseteq$:
+
+\[
+L_1 \sqcup L_2 = (C_1 \sqcup C_2, I_1 \sqcup I_2)
+\]
+
+where for confidentiality, $(o:r)$ in the result is $(o:(r_1 \cap r_2))$ if both labels have a policy for $o$, or the individual policy if only one does. The reader set shrinks (becomes stricter).
+
+For integrity, $(o \leftarrow w)$ in the result is $(o \leftarrow (w_1 \cup w_2))$ if both labels have a policy for $o$, or the individual policy if only one does. The writer set expands (becomes more permissive, trusting more sources).
+
+\subsection{Appendix D: API Trace Example}
+
+Below is a worked example of a hospital scenario, showing how data flows through API commands while maintaining invariants.
+
+\textbf{Scenario:} A patient uploads a medical image, a doctor encrypts it using a program, and then the hospital declassifies a summary for research.
+
+\textbf{Step 1: UPLOAD (Patient uploads image)}
+
+\begin{verbatim}
+Input:
+  token = <valid auth for patient>
+  payload = <medical image bytes>
+  C = (patient:{patient, doctor})
+  I = (patient <- {patient})
+
+Server checks:
+  - token is valid ✓
+  - C and I parse correctly ✓
+  
+Server effect:
+  creates object:
+    dataId = 1001
+    label = ((patient:{patient,doctor}), (patient <- {patient}))
+    owner = patient
+    payload = <image>
+    
+Response:
+  ok(1001)
+\end{verbatim}
+
+\textbf{Step 2: UPLOAD\_PROGRAM (Doctor uploads encryptor program)}
+
+\begin{verbatim}
+Input:
+  token = <valid auth for doctor>
+  src = "
+    input image: (patient:{patient,doctor});
+    output: (patient:{patient,doctor}) wedge (hospital:{hospital});
+    
+    encout := image;  // copy
+  "
+  signature = "doctor@hospital.org"
+
+Server checks:
+  - source parses ✓
+  - input and output labels are valid ✓
+  - Flow check: (patient:{patient,doctor}) ⊆ (patient:{patient,doctor}) ∧ 
+    (hospital:{hospital})? No! (patient:{patient,doctor}) does not 
+    include (hospital:{hospital}) policy.
+  
+Server response:
+  error(flow_violation, "output label too high; 
+  source has no hospital policy")
+\end{verbatim}
+
+The program is rejected. Doctor corrects it:
+
+\begin{verbatim}
+Input (corrected):
+  src = "
+    input image: (patient:{patient,doctor});
+    output: (patient:{patient,doctor});
+    
+    encout := image;
+  "
+
+Server checks:
+  - Flow: (patient:{patient,doctor}) ⊆ (patient:{patient,doctor})? Yes ✓
+  
+Server effect:
+  creates program:
+    programId = 2001
+    interface = {input: (patient:{patient,doctor}), 
+                 output: (patient:{patient,doctor})}
+    
+Response:
+  ok(2001, {input: ..., output: ...})
+\end{verbatim}
+
+\textbf{Step 3: RUN\_PROGRAM (Doctor runs encryptor)}
+
+\begin{verbatim}
+Input:
+  token = <valid auth for doctor>
+  programId = 2001
+  inputIds = [1001]  // the image from step 1
+  outC = (patient:{patient, doctor})
+  outI = (patient <- {patient, doctor})
+
+Server checks:
+  - programId 2001 exists ✓
+  - dataId 1001 exists ✓
+  - doctor can read 1001? (patient:{patient,doctor}), doctor in {patient,doctor}? Yes ✓
+  - program interface: input requires (patient:{patient,doctor}) ✓
+  - input labels: L_1001 = ((patient:{patient,doctor}), (patient <- {patient}))
+  - required output lower bound: L_req = L_1001 = ((patient:{patient,doctor}), 
+    (patient <- {patient}))
+  - Is L_req ⊆ ((patient:{patient,doctor}), (patient <- {patient,doctor}))?
+    Conf: (patient:{patient,doctor}) ⊆ (patient:{patient,doctor})? Yes ✓
+    Integ: for (patient <- {patient,doctor}) in output, must exist 
+           (patient <- w) in input with w ⊇ {patient,doctor}.
+           Input has (patient <- {patient}). Is {patient} ⊇ {patient,doctor}? 
+           No. ✗
+    
+Server response:
+  error(flow_violation, "output integrity too high; 
+  input is not trusted by enough writers")
+\end{verbatim}
+
+The doctor corrects the output label:
+
+\begin{verbatim}
+Input (corrected):
+  outI = (patient <- {patient})
+
+Server checks:
+  - Is L_req ⊆ output? Yes ✓
+  
+Server effect:
+  executes program in sandbox
+  result bytes = <encrypted image>
+  creates output object:
+    dataId = 1002
+    label = ((patient:{patient,doctor}), (patient <- {patient}))
+    
+Response:
+  ok(1002)
+\end{verbatim}
+
+\textbf{Step 4: DECLASSIFY\_AND\_RELEASE (Hospital releases summary)}
+
+\begin{verbatim}
+Input:
+  token = <valid auth for admin>
+  dataId = 1002
+  transform = "aggregate"
+  params = {k = 5}
+  targetC = (patient:{patient,doctor,researcher}) 
+            wedge (hospital:{hospital,researcher})
+
+Server checks:
+  - 1002 exists, label is ((patient:{patient,doctor}), 
+    (patient <- {patient})) ✓
+  - transform "aggregate" is approved ✓
+  - params k=5 satisfies k_min=5? Yes ✓
+  - authority check:
+    * for (patient:{patient,doctor}) → (patient:{patient,doctor,researcher}),
+      admin must have authority from patient. Does admin have delegation?
+      (not shown, assume yes in this example) ✓
+    * for (hospital:{hospital}) → (hospital:{hospital,researcher}),
+      admin must have authority from hospital. (admin typically has this) ✓
+  
+Server effect:
+  applies aggregate transform:
+  result = <anonymized aggregate summary>
+  creates output object:
+    dataId = 1003
+    label = ((patient:{patient,doctor,researcher}), 
+             (hospital:{hospital,researcher}))
+  writes audit entry:
+    (actor: admin, time: 2024-04-22 10:30, 
+     source: 1002, target: 1003, 
+     transform: aggregate, k: 5,
+     authority: patient-delegation-token-xyz)
+     
+Response:
+  ok(1003)
+\end{verbatim}
+
+\textbf{Invariant Verification:}
+
+After all four commands:
+\begin{itemize}
+    \item \textbf{I1 (Label Validity)}: Objects 1001, 1002, 1003 all have valid labels. ✓
+    \item \textbf{I2 (Read Safety)}: Only patients and doctors can read 1001/1002. Only patients/doctors/researchers can read 1003. Read checks enforce this. ✓
+    \item \textbf{I3 (Write Safety)}: Only patients can write to 1001/1002. Integrity labels are respected. ✓
+    \item \textbf{I4 (Program Safety)}: Program 2001 was flow-checked before upload; RUN\_PROGRAM verified label compatibility. ✓
+    \item \textbf{I5 (Declassification Safety)}: Declassification in step 4 was authority-checked and audited. ✓
+\end{itemize}

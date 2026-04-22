@@ -20,41 +20,92 @@ Trust assumptions:
 
 \subsection{Security Labels in the Decentralized Model}
 
-Each object has label $L=(C,I)$:
+Each object has a pair of labels: a confidentiality component and an integrity component. 
+
+The confidentiality component is $C = \bigwedge_i (o_i:r_i)$, a conjunction of policies. Each policy $(o:r)$ declares that owner $o$ permits readers in set $r$. For a principal $p$ to be authorized to read, $p$ must be in the reader set for every owner. For example:
 \begin{itemize}
-    \item confidentiality component $C=\bigwedge_i (o_i:r_i)$,
-    \item integrity component $I=\bigwedge_j (o_j \leftarrow w_j)$.
+    \item Policy $(patient:\{patient,doctor_1\})$ means only the patient and $doctor_1$ may read.
+    \item If we also have policy $(hospital:\{hospital,doctor_1\})$, then the combined label $(patient:\{patient,doctor_1\}) \wedge (hospital:\{hospital,doctor_1\})$ permits only those in both sets: $\{patient,doctor_1\} \cap \{hospital,doctor_1\} = \{doctor_1\}$ (assuming the patient and doctor\_1 are distinct actors).
 \end{itemize}
 
-Intuition:
+The integrity component is $I = \bigwedge_j (o_j \leftarrow w_j)$, a conjunction of integrity policies. Each policy $(o \leftarrow w)$ declares that owner $o$ trusts writers in set $w$. For a principal $p$ to be authorized to write (and thus affect data integrity for which $o$ is responsible), $p$ must be in the writer set for every owner.
+
+Information-flow rules for decentralized labels are based on the flow relation $L_1 \sqsubseteq L_2$ (``$L_1$ flows to $L_2$''). This relation is defined as follows: $L_1=(C_1,I_1)$ flows to $L_2=(C_2,I_2)$ if and only if:
+
+\begin{enumerate}
+\item For \textbf{confidentiality}: for every policy $(o:r_1) \in C_1$, there exists a policy $(o:r_2) \in C_2$ with $r_1 \supseteq r_2$. That is, the set of readers cannot increase as we flow; information destined for a narrower reader set is stricter on confidentiality.
+
+\item For \textbf{integrity}: for every policy $(o \leftarrow w_2) \in I_2$, there exists a policy $(o \leftarrow w_1) \in I_1$ with $w_1 \supseteq w_2$. That is, the set of writers cannot shrink; information from sources trusted by a larger set of writers is safer to use in contexts requiring high integrity.
+\end{enumerate}
+
+This order respects both confidentiality tightness (readers decrease) and integrity strength (trusted writers increase). Understanding the flow order is essential to verifying that the system prevents illegal flows.
+
+\textbf{Example: Confidentiality Flow}.
+Consider:
+\[
+L_1 = \{(patient:\{patient,doctor\}), (hospital:\{hospital,doctor\})\}
+\]
+\[
+L_2 = \{(patient:\{patient\}), (hospital:\{hospital,doctor\})\}
+\]
+Does $L_1 \sqsubseteq L_2$? We check each owner in $L_1$:
 \begin{itemize}
-    \item $(o:r)$ says owner $o$ permits readers in $r$.
-    \item $(o \leftarrow w)$ says owner $o$ trusts writers in $w$.
+  \item Patient policy $(patient:\{patient,doctor\})$ in $L_1$: Is there a policy $(patient:r_2)$ in $L_2$ with $\{patient,doctor\} \supseteq r_2$? Yes, $(patient:\{patient\})$ and $\{patient,doctor\} \supseteq \{patient\}$. \checkmark
+  \item Hospital policy $(hospital:\{hospital,doctor\})$ in $L_1$: Is there a policy $(hospital:r_2)$ in $L_2$ with $\{hospital,doctor\} \supseteq r_2$? Yes, $(hospital:\{hospital,doctor\})$ and $\{hospital,doctor\} \supseteq \{hospital,doctor\}$. \checkmark
+\end{itemize}
+Yes, $L_1 \sqsubseteq L_2$. Information can flow from $L_1$ to $L_2$ because $L_2$ has equal or tighter confidentiality.
+
+\textbf{Example: Integrity Flow}.
+Consider:
+\[
+L_1 = \{(doctor \leftarrow \{doctor,nurse\}), (hospital \leftarrow \{hospital\})\}
+\]
+\[
+L_2 = \{(doctor \leftarrow \{doctor\}), (hospital \leftarrow \{hospital,admin\})\}
+\]
+Does $L_1 \sqsubseteq L_2$? We check each owner policy in $L_2$:
+\begin{itemize}
+  \item Doctor in $L_2$ expects $(doctor \leftarrow \{doctor\})$. In $L_1$ we have $(doctor \leftarrow \{doctor,nurse\})$. Is $\{doctor,nurse\} \supseteq \{doctor\}$? Yes. \checkmark
+  \item Hospital in $L_2$ expects $(hospital \leftarrow \{hospital,admin\})$. In $L_1$ we have $(hospital \leftarrow \{hospital\})$. Is $\{hospital\} \supseteq \{hospital,admin\}$? No. \times
+\end{itemize}
+No, $L_1 \not\sqsubseteq L_2$. Information cannot flow from $L_1$ to $L_2$ because $L_1$ sources are not trusted by enough writers for the hospital's requirements in $L_2$.
+
+\subsection{Attacker Model and Threat Surface}
+
+Our security argument accounts for two distinct attacker classes:
+
+\textbf{Network Attacker (Dolev-Yao).} A passive or active attacker outside the trusted infrastructure boundary. This attacker can:
+\begin{itemize}
+    \item intercept, replay, and reorder network traffic to and from the server,
+    \item initiate new sessions and submit arbitrary API commands with valid authentication (e.g., by stealing or guessing credentials),
+    \item craft and upload malicious user programs,
+    \item cannot break the underlying cryptographic primitives, forge authentication tokens, or directly compromise the server's trusted code.
 \end{itemize}
 
-For fixed owner $o$, confidentiality flow from source to destination is allowed only when destination readers are a subset of source readers (no new readers added). For integrity, source writers must be a subset of destination writers (no increase in trust without proof).
+This attacker is addressed by the secure channel assumption (TLS with endpoint authentication) and by the server's information-flow checks on uploaded code.
 
-\subsection{Attacker Model}
-
-We assume a Dolev-Yao style network attacker outside trusted endpoints:
+\textbf{Insider Misuse Attacker.} A valid authenticated user (doctor, researcher, administrator) who attempts to misuse their privileges to leak information or corrupt data. This attacker:
 \begin{itemize}
-    \item can intercept, replay, and reorder traffic,
-    \item can initiate sessions and submit malicious programs,
-    \item cannot break cryptographic primitives or compromise trusted server internals.
+    \item has valid credentials and passes authentication,
+    \item can call any API command they are nominally authorized to invoke,
+    \item may craft sequences of API calls to build attacks (e.g., upload a program that leaks high-confidentiality data, run it, then cover tracks with audit log manipulation),
+    \item cannot forge authority proofs or bypass the policy checks embedded in commands.
 \end{itemize}
 
-We additionally consider an insider misuse attacker: a valid user who attempts illegal flow through crafted source code or strategic API call sequences.
+This attacker is the primary focus of the information-flow argument: we show that even with full command-level authorization, insider attacks cannot perform illegal flows because the flow invariants I1--I5 are maintained per command.
 
 \subsection{Channel Abstraction and Justification}
 
-The API assumes a secure channel equivalent to TLS with endpoint authentication (as allowed by the project statement). This gives:
+The API assumes a secure channel equivalent to TLS with server authentication and client authentication (as allowed by the project statement). This channel provides:
 \begin{itemize}
-    \item confidentiality in transit,
-    \item integrity of command/response messages,
-    \item endpoint authentication.
+    \item \textbf{confidentiality in transit}: all command and response messages are encrypted, preventing passive eavesdropping on the network,
+    \item \textbf{integrity of messages}: modifications to commands or responses are detected and rejected,
+    \item \textbf{endpoint authentication}: the server verifies the client's identity before accepting commands, and the client verifies the server's identity before sending sensitive data.
 \end{itemize}
 
-The channel does \emph{not} replace application-level flow control. It prevents transport attacks, not semantic leaks caused by accepted computations.
+It is crucial to understand what the channel does \emph{not} provide. The secure channel protects \emph{transport} but not \emph{application semantics}. That is, it prevents attacks where an attacker on the network intercepts or modifies messages, but it does not prevent semantic leaks that arise when the server itself or the authenticated client accepts and executes commands that are logically unsafe. For this reason, our information-flow analysis focuses on command-level checks, not channel security.
+
+In practical deployment, the secure channel is implemented using TLS 1.3 or later with AEAD ciphers (e.g., AES-GCM). The project instruction explicitly permits this assumption, noting that ``sufficient for transit security but not semantic safety'' is an acceptable boundary. Our design respects this boundary: we handle semantic safety through information-flow rules.
 
 \subsection{Security Goals}
 
