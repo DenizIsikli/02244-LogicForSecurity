@@ -1,0 +1,168 @@
+\section{Appendix}
+
+\subsection{Authorship and Contributions}
+
+This report is partitioned so each major part has a primary author responsible for writing and technical correctness.
+
+\subsubsection*{Deniz Isikli (s215818)}
+Primary author of:
+\begin{itemize}
+    \item Chapter 3 (Design Choices and Information-Flow Argument),
+    \item Chapter 5 (Security Analysis of API Commands),
+\end{itemize}
+
+\subsubsection*{Benas Skripkiunas (s253140)}
+Primary author of:
+\begin{itemize}
+    \item Chapter 2 (Participants, Roles, and Assumptions),
+    \item Chapter 6 (Declassification Justification),
+\end{itemize}
+
+\subsubsection*{Abid Hasan (s252729)}
+Primary author of:
+\begin{itemize}
+    \item Chapter 1 (Introduction),
+    \item Chapter 4 (Server API and Security Semantics),
+\end{itemize}
+
+\subsection{Appendix A: Flow Checker Pseudocode}
+
+The server's type checker implements the following core operations, referenced in Chapters 3, 4, and 5.
+
+\subsubsection*{Core Flow Checking Functions}
+
+The type checker implements: \texttt{canFlow}($L_1, L_2$) checks if $L_1 \sqsubseteq L_2$; \texttt{join}($L_1, L_2$) computes the least upper bound by taking reader-set intersections for confidentiality and writer-set unions for integrity; \texttt{check\_assignment} verifies $pc \sqcup L_e \sqsubseteq L_{target}$ for each assignment. When a branch guards an assignment, $pc$ is raised to $pc \sqcup L_{guard}$ inside the branch body.
+
+\subsection{Appendix B: Label Comparison Examples}
+
+Below are five concrete examples of flow checking, worked through by hand:
+
+\textbf{Example 1: Simple Confidentiality Flow}
+
+Source: $L_1 = (doctor:\{doctor,nurse\})$
+Destination: $L_2 = (doctor:\{nurse\})$
+
+Is $L_1 \sqsubseteq L_2$?
+
+\begin{itemize}
+    \item Confidentiality: $(doctor:\{doctor,nurse\})$ in $L_1$; $(doctor:\{nurse\})$ in $L_2$. Check: $\{doctor, nurse\} \supseteq \{nurse\}$? Yes.
+    \item Integrity: neither label has integrity policies.
+\end{itemize}
+
+Result: \textbf{Yes}, $L_1 \sqsubseteq L_2$. Information can flow.
+
+\subsection{Appendix B: Worked API Trace Example}
+
+\textbf{Scenario:} A patient uploads medical data and the hospital declassifies a summary for research.
+
+\textbf{Step 1: UPLOAD (Patient uploads image)}
+
+\begin{verbatim}
+Input:
+  token = <valid auth for patient>
+  payload = <medical image bytes>
+  C = (patient:{patient, doctor})
+  I = (patient <- {patient})
+
+Server checks:
+  - token is valid ✓
+  - C and I parse correctly ✓
+  
+Server effect:
+  creates object:
+    dataId = 1001
+    label = ((patient:{patient,doctor}), (patient <- {patient}))
+    owner = patient
+    payload = <image>
+    
+Response:
+  ok(1001)
+\end{verbatim}
+
+\textbf{Step 2--3: UPLOAD\_PROGRAM and RUN\_PROGRAM}\n\nThe doctor uploads an encryption program with interface input: $(patient:\{patient,doctor\})$, output: $(patient:\{patient,doctor\})$. The server validates the flow and executes the program on the patient's data.
+  - program interface: input requires (patient:{patient,doctor}) ✓
+  - input labels: L_1001 = ((patient:{patient,doctor}), (patient <- {patient}))
+  - required output lower bound: L_req = L_1001 = ((patient:{patient,doctor}), 
+    (patient <- {patient}))
+  - Is L_req ⊆ ((patient:{patient,doctor}), (patient <- {patient,doctor}))?
+    Conf: (patient:{patient,doctor}) ⊆ (patient:{patient,doctor})? Yes ✓
+    Integ: for (patient <- {patient,doctor}) in output, must exist 
+           (patient <- w) in input with w ⊇ {patient,doctor}.
+           Input has (patient <- {patient}). Is {patient} ⊇ {patient,doctor}? 
+           No. ✗
+    
+Server response:
+  error(flow_violation, "output integrity too high; 
+  input is not trusted by enough writers")
+\end{verbatim}
+
+The doctor corrects the output label:
+
+\begin{verbatim}
+Input (corrected):
+  outI = (patient <- {patient})
+
+Server checks:
+  - Is L_req ⊆ output? Yes ✓
+  
+Server effect:
+  executes program in sandbox
+  result bytes = <encrypted image>
+  creates output object:
+    dataId = 1002
+    label = ((patient:{patient,doctor}), (patient <- {patient}))
+    
+Response:
+  ok(1002)
+\end{verbatim}
+
+\textbf{Step 4: DECLASSIFY\_AND\_RELEASE (Hospital releases summary)}
+
+\begin{verbatim}
+Input:
+  token = <valid auth for admin>
+  dataId = 1002
+  transform = "aggregate"
+  params = {k = 5}
+  targetC = (patient:{patient,doctor,researcher}) 
+            wedge (hospital:{hospital,researcher})
+
+Server checks:
+  - 1002 exists, label is ((patient:{patient,doctor}), 
+    (patient <- {patient})) ✓
+  - transform "aggregate" is approved ✓
+  - params k=5 satisfies k_min=5? Yes ✓
+  - authority check:
+    * for (patient:{patient,doctor}) → (patient:{patient,doctor,researcher}),
+      admin must have authority from patient. Does admin have delegation?
+      (not shown, assume yes in this example) ✓
+    * for (hospital:{hospital}) → (hospital:{hospital,researcher}),
+      admin must have authority from hospital. (admin typically has this) ✓
+  
+Server effect:
+  applies aggregate transform:
+  result = <anonymized aggregate summary>
+  creates output object:
+    dataId = 1003
+    label = ((patient:{patient,doctor,researcher}), 
+             (hospital:{hospital,researcher}))
+  writes audit entry:
+    (actor: admin, time: 2024-04-22 10:30, 
+     source: 1002, target: 1003, 
+     transform: aggregate, k: 5,
+     authority: patient-delegation-token-xyz)
+     
+Response:
+  ok(1003)
+\end{verbatim}
+
+\textbf{Invariant Verification:}
+
+After all four commands:
+\begin{itemize}
+    \item \textbf{I1 (Label Validity)}: Objects 1001, 1002, 1003 all have valid labels. ✓
+    \item \textbf{I2 (Read Safety)}: Only patients and doctors can read 1001/1002. Only patients/doctors/researchers can read 1003. Read checks enforce this. ✓
+    \item \textbf{I3 (Write Safety)}: Only patients can write to 1001/1002. Integrity labels are respected. ✓
+    \item \textbf{I4 (Program Safety)}: Program 2001 was flow-checked before upload; RUN\_PROGRAM verified label compatibility. ✓
+    \item \textbf{I5 (Declassification Safety)}: Declassification in step 4 was authority-checked and audited. ✓
+\end{itemize}

@@ -1,0 +1,22 @@
+\section{Resources and Final Remarks}
+
+\subsection{Resources Used}
+
+Primary scientific source for the information-flow model and declassification basis:
+\begin{itemize}
+	\item Myers and Liskov, \emph{A Decentralized Model for Information Flow Control} \cite{MyersLiskov97}.
+\end{itemize}
+
+Project framing and assignment constraints:
+\begin{itemize}
+	\item DTU project description and lecture notes for 02244 \cite{ProjectDescription,Week4,Week5}.
+\end{itemize}
+
+All external resources are listed in the bibliography section.
+
+\subsection{Final Remarks}
+
+The final design intentionally keeps the command set small and formally analyzable. Instead of maximizing features, it maximizes correctness of argument: every command has explicit checks, every accepted program has flow guarantees, and every declassification has authority and audit requirements.
+
+Under the stated assumptions, the server enforces confidentiality and integrity for both data storage and computation, while still supporting practical research releases in a controlled and justified manner.
+

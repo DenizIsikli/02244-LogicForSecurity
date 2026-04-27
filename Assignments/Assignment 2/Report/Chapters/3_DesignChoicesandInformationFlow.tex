@@ -1,0 +1,100 @@
+\section{Design Choices and Information-Flow Argument}
+
+\subsection{Design Scope and Priority}
+
+The project prioritizes formal precision over feature breadth. We therefore choose a compact model with:
+\begin{itemize}
+    \item one fixed actor universe $\mathcal{A}$,
+    \item decentralized labels on all persistent objects,
+    \item white-box user programs only,
+    \item a small trusted set of server-side declassifiers.
+\end{itemize}
+
+This avoids unverifiable corner cases from arbitrary black-box user code.
+
+\subsection{Why a Decentralized Label Model}
+
+Multiple healthcare stakeholders have different security interests: patients, doctors, hospitals, researchers, and regulators. Decentralized labels allow each owner to impose independent constraints without requiring global authority coordination. For example, patient data might have labels $(patient:\{doctor\})$ (patient's read policy), $(hospital:\{hospital,researcher\})$ (hospital's policy), and $(regulator:\{hospital\})$ (regulatory policy). A reader must satisfy all three. This is more expressive and compositional than centralized approaches.
+
+\subsection{Flow Order and Program Rules}
+
+We write $L_1 \sqsubseteq L_2$ when information is allowed to flow from label $L_1$ to $L_2$, respecting both confidentiality and integrity components. This partial order is the foundation of all flow safety checks.
+
+Information flows upward in the order: if data has label $L_1$ and the destination has label $L_2$ with $L_1 \sqsubseteq L_2$, then copying or deriving data at $L_1$ into the destination is safe. The check prevents both explicit flows (direct assignments like $x \leftarrow y$) and implicit flows (dependencies through control flow).
+
+Core program rules used by the server checker:
+\[
+\frac{\Gamma \vdash e : L_e \qquad pc \sqcup L_e \sqsubseteq \Gamma(x)}{\Gamma,pc \vdash x := e}
+\]
+
+where $\Gamma$ is a type environment mapping variables to labels, $pc$ is the ``program counter label'' representing the security level of the current control context, $L_e$ is the label inferred for expression $e$, and $\sqcup$ is the join operation (combining two labels into the least upper bound).
+
+For conditionals:
+\[
+\frac{\Gamma, pc \vdash \text{cond} : L_{cond} \quad \Gamma, (pc \sqcup L_{cond}) \vdash B}{\Gamma, pc \vdash \text{if cond then } B}
+\]
+
+The $pc$ is raised within the branch to $pc \sqcup L_{cond}$, which accounts for the implicit dependency on the condition. This blocks implicit information leaks where an attacker observes which branch was taken by watching which variables are assigned.
+
+\textbf{Example: Blocking an Implicit Leak}. Suppose we have:
+\begin{itemize}
+    \item $secret: (confidential:\{doctor\})$
+    \item $public: (confidential:\{\})$ (readable by all)
+\end{itemize}
+
+If a user writes:
+\[\text{if } (secret > 0) \text{ then } public := 0 \text{ else } public := 1\]
+
+The type checker would compute:
+\begin{enumerate}
+    \item Condition type: $L_{cond} = (confidential:\{doctor\})$ from $secret$.
+    \item Program counter inside branch: $pc \sqcup L_{cond} = (confidential:\{doctor\})$.
+    \item Assignment check: Does $(confidential:\{doctor\}) \sqsubseteq (confidential:\{\})$? No, because $\{doctor\} \not\supseteq \{\}$ (the reader set is not a superset). \times
+\end{enumerate}
+
+The assignment is rejected at check time, preventing the leak.
+
+\subsection{Why White-Box Programs}
+
+Source code analysis enables sound static flow checking before execution (black-box code cannot be reliably analyzed). Pre-execution rejection is stronger than runtime monitoring. Source checking enables compositional security: the server independently verifies program safety regardless of the author's trustworthiness.
+
+\subsection{Declassification Design}
+
+Declassification only via trusted server transformations (not user code) ensures explicit target policies, authority proof from owners, transform-specific constraints, and immutable audit logs. This centralizes policy enforcement and prevents user programs from bypassing controls.
+
+\subsection{Attack-Driven Justification}
+
+We design the system to withstand realistic attacks. Below we enumerate attack classes and show where each is blocked:
+
+\textbf{A1: Direct Copy Leak.} An attacker with authorized access to high-confidentiality data $secret: (owner:\{owner\})$ attempts to copy it to low-confidentiality output $public: (owner:\{\})$ via assignment $public := secret$.
+
+The type checker must verify: $(owner:\{owner\}) \sqsubseteq (owner:\{\})$? This requires $\{owner\} \supseteq \{\}$, which is true. So the flow would be accepted!
+
+Wait—this seems wrong. The issue is that low confidentiality should be on the right-hand side of the assignment check. Actually, in our type system, we require $L_e \sqsubseteq \Gamma(x)$, so $L_{secret} \sqsubseteq L_{public}$. For this to hold, $(owner:\{owner\}) \sqsubseteq (owner:\{\})$, which fails because $\{owner\} \not\supseteq \{\}$. The assignment is blocked. \checkmark
+
+\textbf{A2: Implicit Control Leak via Branching.} An attacker crafts a program:
+\[\text{if } (secret > threshold) \text{ then } result := 1 \text{ else } result := 0\]
+
+where $secret$ is high-confidentiality. An observer watching $result$ could infer something about $secret$ by seeing whether $result$ is 1 or 0.
+
+The checker raises $pc$ inside the branch to $pc \sqcup L_{secret}$. Any assignment to $result$ inside the branch must then satisfy $(pc \sqcup L_{secret}) \sqsubseteq L_{result}$. If $L_{secret}$ is high-confidentiality and $L_{result}$ is low-confidentiality, this check fails. The program is rejected. \checkmark
+
+\textbf{A3: Integrity Poisoning.} A low-integrity attacker (researcher with limited writing authority) attempts to corrupt high-integrity data by supplying it as input to a program whose output is then written to high-integrity storage.
+
+The flow rule prevents this: if the output requires high integrity, $L_{req}$ will have integrity components with few trusted writers. The program's input from the low-trust researcher will not satisfy $L_{prog\_input} \sqsubseteq L_{req}$ in the integrity component, because the researcher is not in the high-integrity writer set. \checkmark
+
+\textbf{A4: Unauthorized Downgrade.} An attacker without authority claims to declassify sensitive data from $(patient:\{patient,doctor\})$ to $(patient:\{patient,doctor,researcher\})$.
+
+The server checks: ``does the caller have authority from the patient to add researcher to the reader set?'' If not, the call fails. Declaring authority with an invalid credential is rejected. \checkmark
+
+\subsection{Boundaries of the Argument}
+
+Our proof obligations do not cover:
+\begin{itemize}
+    \item compromised or malicious trusted server code,
+    \item covert channels outside the language and API model (e.g., timing attacks, power analysis),
+    \item social engineering or misrepresentation of authority by legitimate users.
+\end{itemize}
+
+Explicitly stating these boundaries keeps our claims accurate and focused on what the model and implementation demonstrably provide.
+

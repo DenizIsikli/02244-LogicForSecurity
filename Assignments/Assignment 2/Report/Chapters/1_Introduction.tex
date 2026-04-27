@@ -1,0 +1,39 @@
+\section{Introduction}
+
+This report presents a secure data-hosting service for medical information using the decentralized information-flow model of Myers and Liskov \cite{MyersLiskov97}. The goal is not only to describe a server API, but to give precise security arguments for why each API command preserves confidentiality and integrity.
+
+The service supports three capabilities:
+\begin{itemize}
+    \item user-controlled security labels over data and program variables,
+    \item policy-based sharing and collaboration,
+    \item execution of user-provided programs after information-flow checking.
+\end{itemize}
+
+The core challenge is to support useful computation and controlled sharing without illegal flows. We therefore use decentralized labels with explicit owners, readers, and writers, and we model declassification using the authority mechanism required by Myers-Liskov.
+
+\subsection{Evaluation Scope}
+
+Three-layer security argument: model layer (actors, trust, attacker), design layer (API choices), verification layer (per-command preservation). Structure prioritizes precise justification over feature breadth.
+
+\subsection{Decentralized Labels}
+
+Multiple healthcare stakeholders impose independent policies. Decentralized labels allow patient $o_1$, hospital $o_2$, doctor $o_3$ to each declare reader/writer sets. Effective policy is conjunction: reader must satisfy all policies. Integrity similarly: owner $o$ declares trusted writers. Full label is $(C, I)$ pair.
+where $C = \bigwedge_i (o_i:r_i)$ is a conjunction of confidentiality policies and $I = \bigwedge_j (o_j \leftarrow w_j)$ is a conjunction of integrity policies.
+
+The decentralized model is essential because different stakeholders (patients, doctors, hospitals, researchers) have legitimate but conflicting policy requirements. A centralized authority cannot fairly adjudicate all interests, but allowing each owner to declare their own constraints respects the autonomy that is ethically necessary in healthcare. At the technical level, this decentralization makes the model compositional: adding a new owner's policy to a label simply adds one more conjunct, and the flow rules handle the resulting complexity uniformly.
+
+\subsection{Why Myers-Liskov for This Project}
+
+Declassification is a necessary but dangerous operation in any real system. When sensitive data must be released for research, collaboration, or regulatory purposes, uncontrolled downgrading can silently violate confidentiality policies. The Myers-Liskov model provides a principled framework for controlled declassification that the Volpano-Simoyi-Smith (VSI) type system does not address.
+
+The Myers-Liskov model is the appropriate basis for this project because declassification is a required feature in our hospital setting and it provides:
+\begin{itemize}
+    \item \textbf{Decentralized confidentiality and integrity labels}, where multiple owners can impose independent constraints without requiring global consensus or a central authority,
+    \item \textbf{Static information-flow checks for user programs}, ensuring that untrusted user code cannot perform illegal flows before execution,
+    \item \textbf{Explicit declassification with authority}, where confidentiality can only be relaxed by a principal who has explicit proof of authority from the owner whose policy is being loosened.
+\end{itemize}
+
+The authority mechanism is critical. In a healthcare setting, research data cannot be released simply because a staff member decides it is okay; rather, the data owner (patient, hospital, or doctor) must have pre-authorized the release, and the release must happen through a trusted transformation (e.g., anonymization) that is defined by policy, not chosen ad hoc. Myers-Liskov gives us the vocabulary to express this: a principal $p$ can declassify a value from label $L$ only if $p$ has authority over every owner whose policy is being relaxed.
+
+This aligns with the project instruction to use course methods and, for declassification, specifically the Myers-Liskov model \cite{ProjectDescription}.
+

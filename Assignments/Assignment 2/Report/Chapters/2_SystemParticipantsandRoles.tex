@@ -1,0 +1,69 @@
+\section{System Participants, Roles, and Assumptions}
+
+\subsection{Actors and Trust Boundaries}
+
+Let $\mathcal{A}$ be the set of actors that may appear in labels. In our deployment, $\mathcal{A}$ includes:
+\begin{itemize}
+    \item doctors (data owners),
+    \item collaborating clinicians,
+    \item researchers,
+    \item administrators,
+    \item the server principal.
+\end{itemize}
+
+Trust assumptions:
+\begin{itemize}
+    \item the server enforcement code is trusted,
+    \item uploaded user programs are untrusted,
+    \item users are authenticated over a secure channel before invoking API commands.
+\end{itemize}
+
+\subsection{Security Labels in the Decentralized Model}
+
+Each object has a label pair $(C, I)$: confidentiality $C = \bigwedge_i (o_i:r_i)$ (owner $o_i$ permits readers $r_i$) and integrity $I = \bigwedge_j (o_j \leftarrow w_j)$ (owner $o_j$ trusts writers $w_j$). 
+
+Information flows from $L_1$ to $L_2$ iff: for all $(o:r_1) \in C_1$, there exists $(o:r_2) \in C_2$ with $r_1 \supseteq r_2$ (readers shrink); and for all $(o \leftarrow w_2) \in I_2$, there exists $(o \leftarrow w_1) \in I_1$ with $w_1 \supseteq w_2$ (trusted writers grow). This prevents both confidentiality breaches (illegal reads) and integrity violations (untrusted writes).
+Does $L_1 \sqsubseteq L_2$? We check each owner in $L_1$:
+\begin{itemize}
+  \item Patient policy $(patient:\{patient,doctor\})$ in $L_1$: Is there a policy $(patient:r_2)$ in $L_2$ with $\{patient,doctor\} \supseteq r_2$? Yes, $(patient:\{patient\})$ and $\{patient,doctor\} \supseteq \{patient\}$. \checkmark
+  \item Hospital policy $(hospital:\{hospital,doctor\})$ in $L_1$: Is there a policy $(hospital:r_2)$ in $L_2$ with $\{hospital,doctor\} \supseteq r_2$? Yes, $(hospital:\{hospital,doctor\})$ and $\{hospital,doctor\} \supseteq \{hospital,doctor\}$. \checkmark
+\end{itemize}
+Yes, $L_1 \sqsubseteq L_2$. Information can flow from $L_1$ to $L_2$ because $L_2$ has equal or tighter confidentiality.
+
+\textbf{Example: Integrity Flow}.
+Consider:
+\[
+L_1 = \{(doctor \leftarrow \{doctor,nurse\}), (hospital \leftarrow \{hospital\})\}
+\]
+\[
+L_2 = \{(doctor \leftarrow \{doctor\}), (hospital \leftarrow \{hospital,admin\})\}
+\]
+Does $L_1 \sqsubseteq L_2$? We check each owner policy in $L_2$:
+\begin{itemize}
+  \item Doctor in $L_2$ expects $(doctor \leftarrow \{doctor\})$. In $L_1$ we have $(doctor \leftarrow \{doctor,nurse\})$. Is $\{doctor,nurse\} \supseteq \{doctor\}$? Yes. \checkmark
+  \item Hospital in $L_2$ expects $(hospital \leftarrow \{hospital,admin\})$. In $L_1$ we have $(hospital \leftarrow \{hospital\})$. Is $\{hospital\} \supseteq \{hospital,admin\}$? No. \times
+\end{itemize}
+No, $L_1 \not\sqsubseteq L_2$. Information cannot flow from $L_1$ to $L_2$ because $L_1$ sources are not trusted by enough writers for the hospital's requirements in $L_2$.
+
+\subsection{Attacker Model and Threat Surface}
+
+\subsection{Attacker Model}
+
+\textbf{Network Attacker (Dolev-Yao):} Intercepts/replays network traffic but cannot break cryptography or compromise server code. Addressed by TLS with endpoint authentication and information-flow checks on uploaded programs.
+
+\textbf{Insider Misuse Attacker:} Valid authenticated user who misuses privileges to leak/corrupt data. Primary focus: our flow invariants I1-I5 prevent illegal flows even with valid authorization.
+
+\subsection{Channel Assumption}
+
+We assume a secure channel (TLS 1.3 with authentication) that provides confidentiality and integrity of messages in transit, but not application-level semantic safety. Semantic safety is ensured by command-level information-flow checks, not by the channel.
+
+\subsection{Security Goals}
+
+\begin{itemize}
+    \item \textbf{G1 Confidentiality}: no illegal reads from high-confidentiality state.
+    \item \textbf{G2 Integrity}: no illegal writes into high-integrity state.
+    \item \textbf{G3 Program Safety}: only flow-safe user programs execute.
+    \item \textbf{G4 Controlled Declassification}: confidentiality relaxation only with authority and approved transforms.
+    \item \textbf{G5 Accountability}: every declassification is logged.
+\end{itemize}
+
