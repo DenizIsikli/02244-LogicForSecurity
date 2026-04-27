@@ -1,46 +1,34 @@
 # Security Protocols – Course Notes
 
-This repository contains my personal notes and materials for the *Security Protocols* course.
-
-The goal of these notes is **conceptual understanding and fast recall**, not reproducing slides or formal proofs.
-Each week is summarized in a single Markdown file, optimized for revisiting the material without needing the slides.
+Repository for 02244 - Logic For Security
 
 ---
 
 ## Repository Structure
 
-- `Assignments/`
-Mandatory assignments, reports, and related resources.
-
-- `Notes/`
-Weekly Markdown notes (one file per week).
-These are the primary learning artifacts.
-
-- `Protocols/`
-Protocol scripts
-
-- `OFMC/`
-OFMC executables for Linux, Windows, MacOS
-
-- `Slides/`
-Original lecture slides, organized by week, kept for reference only.
-
----
-
-## Notes Philosophy
-
-- Bullet-point driven
-- Intuition and threat models over formulas
-- Focus on:
-  - attacker capabilities
-  - failure patterns
-  - protocol design lessons
-- Written for *future-me* under exam pressure
-
----
-
-## License
-
-This repository is licensed under the MIT License.
-Slides and other course materials remain the property of their respective authors and are included for personal study only.
+```
+02244-LogicForSecurity/
+│
+├── LICENSE
+├── README.md
+│
+└── Assignments/               # Mandatory assignments/Resources
+    │
+    ├── Assignment1/
+    │   ├── OFMC/              # OFMC binaries
+    │   │   ├── install.txt    # Installation instructions
+    │   │   ├── linux/         # OFMC executable for Linux
+    │   │   │   └── ofmc
+    │   │   ├── mac/           # OFMC executable for macOS
+    │   │   │   └── ofmc
+    │   │   └── windows/       # OFMC executable for Windows
+    │   ├── Protocols/         # Protocols for weekly assignments
+    │   │   ├── Week2.AnB
+    │   │   ├── Week3.AnB
+    │   │   ├── Week4.AnB
+    │   │   ├── Week5.AnB
+    │   │   └── Example_Protocols/  # Reference protocol 
+    └── Assignment2/
+        ├── Report/            # Assignment 2 LaTeX report
+```
 
